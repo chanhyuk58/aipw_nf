@@ -1,59 +1,121 @@
 import pandas as pd
 import numpy as np
-# import nflows
-from nflows import transforms, distributions, flows
-from nflows.flows.base import Flow
-from nflows.distributions.normal import StandardNormal
-from nflows.transforms.base import CompositeTransform
-from nflows.transforms.autoregressive import MaskedAffineAutoregressiveTransform
-from nflows.transforms.permutations import ReversePermutation
+import normflows as nf
+from tqdm import tqdm
 import torch
 from torch import nn
 from torch import optim
 import matplotlib.pyplot as plt
 import sklearn.datasets as datasets
 from sklearn.preprocessing import StandardScaler
-import random
+# import random
 
-x, y = datasets.make_circles(1000, noise=.1)
-plt.scatter(x[:, 0], x[:, 1], c=y)
+# Get device to be used
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# Define target
+target = nf.distributions.target.ConditionalDiagGaussian()
+context_size = 4
+
+# Plot target
+grid_size = 100
+xx, yy = torch.meshgrid(torch.linspace(-2, 2, grid_size), torch.linspace(-2, 2, grid_size), indexing='ij')
+zz = torch.cat([xx.unsqueeze(2), yy.unsqueeze(2)], 2).view(-1, 2)
+zz = zz.to(device)
+context_plot = torch.cat([torch.tensor([0.3, 0.9]).to(device) + torch.zeros_like(zz), 
+                          0.6 * torch.ones_like(zz)], dim=-1)
+logp = target.log_prob(zz, context_plot)
+p_target = torch.exp(logp).view(*xx.shape).cpu().data.numpy()
+
+plt.figure(figsize=(10, 10))
+plt.pcolormesh(xx, yy, p_target, shading='auto')
+plt.gca().set_aspect('equal', 'box')
 plt.show(block=False)
 
-num_layers = 5
-base_dist = StandardNormal(shape=[2])
+# Define flows
+K = 4
 
-transforms = []
-for _ in range(num_layers):
-    transforms.append(ReversePermutation(features=2))
-    transforms.append(MaskedAffineAutoregressiveTransform(features=2, 
-                                                          hidden_features=4))
-transform = CompositeTransform(transforms)
+latent_size = 2
+hidden_units = 128
+num_blocks = 2
 
-flow = Flow(transform, base_dist)
-optimizer = optim.Adam(flow.parameters())
+flows = []
+for i in range(K):
+    flows += [nf.flows.MaskedAffineAutoregressive(latent_size, hidden_units, 
+                                                  context_features=context_size, 
+                                                  num_blocks=num_blocks)]
+    flows += [nf.flows.LULinearPermute(latent_size)]
 
-num_iter = 5000
-for i in range(num_iter):
-    x, y = datasets.make_moons(128, noise=.1)
-    x = torch.tensor(x, dtype=torch.float32)
-    optimizer.zero_grad()
-    loss = -flow.log_prob(inputs=x).mean()
-    loss.backward()
-    optimizer.step()
+# Set base distribution
+q0 = nf.distributions.DiagGaussian(2, trainable=False)
     
-    if (i + 1) % 500 == 0:
-        xline = torch.linspace(-1.5, 2.5, 100)
-        yline = torch.linspace(-.75, 1.25, 100)
-        xgrid, ygrid = torch.meshgrid(xline, yline)
-        xyinput = torch.cat([xgrid.reshape(-1, 1), ygrid.reshape(-1, 1)], dim=1)
+# Construct flow model
+model = nf.ConditionalNormalizingFlow(q0, flows, target)
 
-        with torch.no_grad():
-            zgrid = flow.log_prob(xyinput).exp().reshape(100, 100)
+# Move model on GPU if available
+model = model.to(device)
 
-        plt.contourf(xgrid.numpy(), ygrid.numpy(), zgrid.numpy())
-        plt.title('iteration {}'.format(i + 1))
-        plt.show(block=False)
+# Plot initial flow distribution, target as contours
+model.eval()
+log_prob = model.log_prob(zz, context_plot).to('cpu').view(*xx.shape)
+model.train()
+prob = torch.exp(log_prob)
+prob[torch.isnan(prob)] = 0
 
+plt.figure(figsize=(10, 10))
+plt.pcolormesh(xx, yy, prob.data.numpy(), shading='auto')
+plt.contour(xx, yy, p_target, cmap=plt.get_cmap('cool'), linewidths=2)
+plt.gca().set_aspect('equal', 'box')
+plt.show(block=False)
+
+# Train model
+max_iter = 5000
+batch_size= 128
+
+loss_hist = np.array([])
+
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-4, weight_decay=1e-5)
+
+
+for it in tqdm(range(max_iter)):
+    optimizer.zero_grad()
+    
+    # Get training samples
+    context = torch.cat([torch.randn((batch_size, 2), device=device), 
+                         0.5 + 0.5 * torch.rand((batch_size, 2), device=device)], 
+                        dim=-1)
+    x = target.sample(batch_size, context)
+    
+    # Compute loss
+    loss = model.forward_kld(x, context)
+    
+    # Do backprop and optimizer step
+    if ~(torch.isnan(loss) | torch.isinf(loss)):
+        loss.backward()
+        optimizer.step()
+    
+    # Log loss
+    loss_hist = np.append(loss_hist, loss.to('cpu').data.numpy())
+
+# Plot loss
+plt.figure(figsize=(10, 10))
+plt.plot(loss_hist, label='loss')
+plt.legend()
+plt.show(block=False)
+
+
+# Plot trained flow distribution, target as contours
+model.eval()
+log_prob = model.log_prob(zz, context_plot).to('cpu').view(*xx.shape)
+model.train()
+prob = torch.exp(log_prob)
+prob[torch.isnan(prob)] = 0
+
+plt.figure(figsize=(10, 10))
+plt.pcolormesh(xx, yy, prob.data.numpy(), shading='auto')
+plt.contour(xx, yy, p_target, cmap=plt.get_cmap('cool'), linewidths=2)
+plt.gca().set_aspect('equal', 'box')
+plt.show(block=False)
 
 #-------------------------
 # Social Science DGP
@@ -143,17 +205,17 @@ for i in range(num_iter):
     optimizer.step()
     
     # if (i + 1) % 500 == 0:
-        xline = torch.linspace(22, 200, 100)
-        yline = torch.linspace(-0.2, 1.2, 100)
-        xgrid, ygrid = torch.meshgrid(xline, yline)
-        xyinput = torch.cat([xgrid.reshape(-1, 1), ygrid.reshape(-1, 1)], dim=1)
+    xline = torch.linspace(22, 200, 100)
+    yline = torch.linspace(-0.2, 1.2, 100)
+    xgrid, ygrid = torch.meshgrid(xline, yline)
+    xyinput = torch.cat([xgrid.reshape(-1, 1), ygrid.reshape(-1, 1)], dim=1)
 
-        with torch.no_grad():
+    with torch.no_grad():
             zgrid = flow.log_prob(xyinput).exp().reshape(100, 100)
 
-        plt.contourf(xgrid.numpy(), ygrid.numpy(), zgrid.numpy())
+    plt.contourf(xgrid.numpy(), ygrid.numpy(), zgrid.numpy())
         # plt.title('iteration {}'.format(i + 1))
-        plt.show(block=False)
+    plt.show(block=False)
 
 plt.scatter(df[:, 1], df[:, 3], alpha=0.2)
 plt.show(block=False)
