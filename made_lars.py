@@ -5,22 +5,69 @@ import normflows as nf
 import larsflow as lf
 from matplotlib import pyplot as plt
 from tqdm import tqdm
+# import pandas as pd
+# import seaborn as sns
 
 # Get device
 enable_cuda = True
-device = torch.device('cuda' if torch.cuda.is_available() and enable_cuda else 'cpu')
+enable_mps = False # Using GPU in Apple Silicon Mac. Slower than CPU?
+device = torch.device(
+    'cuda' if torch.cuda.is_available() and enable_cuda else
+    'mps' if torch.backends.mps.is_available() and enable_mps else
+    'cpu'
+)
+
+# Generate Target Population {{{
+N = 10**5
+np.random.seed(63130)
+
+# Generate Covariates
+x = torch.cat([
+    torch.randn((N, 1), device=device), 
+    0.5 + 0.5 * torch.rand((N, 1), device=device),
+    0.5 * torch.rand((N, 1), device=device),
+    0.2 * torch.rand((N, 1), device=device),
+    0.1 * torch.rand((N, 1), device=device),
+], 
+              dim=-1)
+
+# Generate the distribution for the error term = y | x
+n_modes=3
+dim=1
+d = nf.distributions.GaussianMixture(n_modes=3, dim=1, trainable=True,
+                                      loc=np.array([[-4.0], [1.0], [6.0]]),
+                                      scale=np.array([[2.0], [1.2], [3.0]])).sample(N).float()
+# d = torch.distributions.categorical.Categorical(torch.tensor([ 0.25, 0.25, 0.25, 0.25 ])).sample(sample_shape=torch.Size([N, 1]))
+# d = nf.distributions.TwoMoons().sample(N)
+# d = nf.distributions.RingMixture().sample(N)
+# d = nf.distributions.CircularGaussianMixture().sample(N)
+
+# y = d + x[:,0].view(N, 1) + x[:,1].view(N, 1)
+
+# Generate Target Sample
+sample_size = 1000
+sample_idx = np.random.choice(range(N), sample_size)
+
+xn = x[sample_idx].to(device)
+dn = d[sample_idx].to(device)
+
+yn = torch.cat([
+    dn.view(sample_size, 1) + xn.sum(dim=1).view(sample_size, 1), 
+], dim=-1)
+# }}}
 
 # Function for model creation {{{
-def create_model(base='gauss'):
+def create_model(base='resampled', outcome=None, covariates=None):
     # Set up model
 
     # Define flows
-    K = 8 # number of layers
+    K = 4 # number of layers
     torch.manual_seed(10)
 
-    latent_size = 2
-    hidden_units = 128
-    num_blocks = 2
+    latent_size = outcome.size()[1] # dimension of the latent space
+    context_size = covariates.size()[1] # dimension of the context / covariates space
+    hidden_units = 128 # hidden_units for MaskedAffineAutoregressive
+    num_blocks = 2 # block for MaskedAffineAutoregressive
     b = torch.Tensor([1 if i % 2 == 0 else 0 for i in range(latent_size)])
     flows = []
     for i in range(K):
@@ -28,14 +75,11 @@ def create_model(base='gauss'):
                                                   context_features=context_size, 
                                                   num_blocks=num_blocks)]
         flows += [nf.flows.LULinearPermute(latent_size)]
-        # param_map = nf.nets.MLP([latent_size // 2, 32, 32, latent_size], init_zeros=True)
-        # flows += [nf.flows.AffineCouplingBlock(param_map)]
-        # flows += [nf.flows.Permute(latent_size, mode='swap')]
-        # flows += [nf.flows.ActNorm(latent_size)]
 
     # Set prior and q0
     if base == 'resampled':
-        a = nf.nets.MLP([latent_size, 256, 256, 256, 1], output_fn="sigmoid")
+        # a = nf.nets.MLP([latent_size, 128, 256, 512, 256, 128, 1], output_fn="sigmoid") # 5 layers
+        a = nf.nets.MLP([latent_size, 256, 256, 1], output_fn="sigmoid") # layers
         q0 = lf.distributions.ResampledGaussian(latent_size, a, 100, 0.1, trainable=False)
     elif base == 'gaussian_mixture':
         n_modes = 10
@@ -48,8 +92,6 @@ def create_model(base='gauss'):
         raise NotImplementedError('This base distribution is not implemented.')
 
     # Construct flow model
-    # model = lf.NormalizingFlow(q0=q0, flows=flows, p=p)
-    # Construct flow model
     model = nf.ConditionalNormalizingFlow(q0, flows)
 
     # Move model on GPU if available
@@ -57,95 +99,73 @@ def create_model(base='gauss'):
 # }}}
 
 # Function to train model {{{
-def train(model, max_iter=2000, num_samples=1000, lr=1e-3, weight_decay=1e-3, 
+def train(model, covariates=None, outcome=None, max_iter=2000, sample_size=1000, lr=1e-3, weight_decay=1e-3, 
           q0_weight_decay=1e-4):
     # Do mixed precision training
     optimizer = torch.optim.Adam(model.parameters(),  lr=lr, weight_decay=weight_decay)
     model.train()
 
+    global loss_hist
+
     for it in tqdm(range(max_iter)):
-        
-        # Get training samples
-        context = torch.cat([torch.randn((num_samples, 1), device=device), 
-                         0.5 + 0.5 * torch.rand((num_samples, 1), device=device)], 
-                        dim=-1)
-        # x = model.p.sample(num_samples, context) # Sample from target distribution p
-        # x = nf.distributions.TwoMoons().sample(num_samples) + context # Sample from target distribution p
-        # x = nf.distributions.CircularGaussianMixture().sample(num_samples)+ context # Sample from target distribution p
-        x = nf.distributions.RingMixture().sample(num_samples)+ context # Sample from target distribution p
-
-        loss = model.forward_kld(x, context) # loss function is defined with KL divergence
-        # loss = model.reverse_kld(x, context) # loss function is defined with KL divergence
-
-        loss.backward()
-        optimizer.step()
-
         # Clear gradients
         nf.utils.clear_grad(model)
+        optimizer.zero_grad()
+
+        # Bootstrap training sample
+        boot_idx = np.random.choice(range(sample_size), sample_size, replace=True)
+        b_covariates = covariates[boot_idx]
+        b_outcome = outcome[boot_idx]
+
+        # b_covariates = xn[boot_idx]
+        # b_outcome = yn[boot_idx]
+
+        loss = model.forward_kld(x=b_outcome, context=b_covariates) # loss function is defined with forward KL divergence
+        # loss = model.reverse_kld(b_outcome, b_covariates) # loss function is defined with reverse KL divergence
+
+        if ~(torch.isnan(loss) | torch.isinf(loss)):
+            loss.backward(retain_graph=True)
+            optimizer.step()
+            # Log loss
+
+        loss_hist = np.append(loss_hist, loss.to('cpu').data.numpy())
 # }}}
 
 # Plot function {{{
-def plot_results(model, target=True, a=False, base=False, save=False, prefix=''):
+def plot_results(model, a=False, base=False, save=False, prefix=''):
     # Prepare z grid for evaluation
-    grid_size = 300
-    xx, yy = torch.meshgrid(torch.linspace(-3, 3, grid_size), torch.linspace(-3, 3, grid_size))
-    zz = torch.cat([xx.unsqueeze(2), yy.unsqueeze(2)], 2).view(-1, 2)
+    grid_size = 200
+    # xx, yy = torch.meshgrid(torch.linspace(-5, 5, grid_size), torch.linspace(-5, 5, grid_size))
+    # zz = torch.cat([xx.unsqueeze(2), yy.unsqueeze(2)], 2).view(-1, 2)
+    zz = torch.linspace(d.min(), d.max(), grid_size)
     zz = zz.to(device)
-    # context_plot = torch.cat([torch.tensor([0.3, 0.9]).to(device) + torch.zeros_like(zz), 
-    #                       0.6 * torch.ones_like(zz)], dim=-1)
-    context_plot = torch.cat([torch.tensor([0.3, 0.9]).to(device) + torch.zeros_like(zz)], dim=-1)
-    # context_plot = torch.cat([torch.randn((zz.size()[0], 1), device=device), 
-    #                      0.5 + 0.5 * torch.rand((zz.size()[0], 1), device=device)], 
-    #                     dim=-1)
-    
-    # log_prob = model.p.log_prob(zz, context_plot).to('cpu').view(*xx.shape)
-    # prob = torch.exp(log_prob)
-    # prob[torch.isnan(prob)] = 0
-    # prob_target = prob.data.numpy()
-    
-    if target:
-        plt.figure(figsize=(15, 15))
-        plt.pcolormesh(xx, yy, prob_target)
-        #cs = plt.contour(xx, yy, prob_target, [.025, .15, .7], colors='w', linewidths=3)#, linestyles='dashed')
-        #for c in cs.collections:
-        #    c.set_dashes([(0, (10.0, 10.0))])
-        plt.gca().set_aspect('equal', 'box')
-        plt.axis('off')
-        if save:
-            plt.savefig(prefix + 'target.png', dpi=300)
-        plt.show(block=False)
-
+    zz = zz.view(zz.size()[0], 1)
+    context_plot = torch.tensor([0.1, 0.1, 0.1, 0.1, 0.1]).to(device).repeat(zz.size()[0], 1)
+    # context_plot = torch.tensor([0.1, 0.1]).to(device).repeat(zz.size()[0], 1)
     model.eval()
-    log_prob = model.log_prob(zz, context_plot).to('cpu').view(*xx.shape)
+    log_prob = model.log_prob(zz, context_plot).to('cpu').view(*zz.shape)
 
     prob = torch.exp(log_prob)
     prob[torch.isnan(prob)] = 0
     prob_model = prob.data.numpy()
 
     plt.figure(figsize=(15, 15))
-    plt.pcolormesh(xx, yy, prob_model)#, cmap=plt.get_cmap('coolwarm'))
-    #cs = plt.contour(xx, yy, prob_model, [.025, .2, .35], colors='w', linewidths=3)#, linestyles='dashed')
-    #for c in cs.collections:
-    #    c.set_dashes([(0, (10.0, 10.0))])
-    plt.gca().set_aspect('equal')
-    plt.axis('off')
+    # plt.pcolormesh(xx, yy, prob_model)
+    # plt.plot(prob_model)
+    plt.plot(zz, prob.detach().numpy())
     if save:
         plt.savefig(prefix + 'model.png', dpi=300)
     plt.show(block=False)
 
     if base:
-        log_prob = model.q0.log_prob(zz, context_plot).to('cpu').view(*xx.shape)
+        log_prob = model.q0.log_prob(zz, context_plot).to('cpu').view(*zz.shape)
         prob = torch.exp(log_prob)
         prob[torch.isnan(prob)] = 0
         prob_base = prob.data.numpy()
 
         plt.figure(figsize=(15, 15))
-        plt.pcolormesh(xx, yy, prob_base)
-        #cs = plt.contour(xx, yy, prob_base, [.025, .075, .135], colors='w', linewidths=3)#, linestyles='dashed')
-        #for c in cs.collections:
-        #    c.set_dashes([(0, (10.0, 10.0))])
-        plt.gca().set_aspect('equal')
-        plt.axis('off')
+        plt.plot(zz, prob_base)
+        # plt.pcolormesh(xx, yy, prob_base)
         if save:
             plt.savefig(prefix + 'base.png', dpi=300)
         plt.show(block=False)
@@ -153,11 +173,10 @@ def plot_results(model, target=True, a=False, base=False, save=False, prefix='')
     if a:
         prob = model.q0.a(zz).to('cpu').view(*xx.shape)
         prob[torch.isnan(prob)] = 0
-
+        prob_a = prob.data.numpy()
         plt.figure(figsize=(15, 15))
-        plt.pcolormesh(xx, yy, prob.data.numpy())
-        plt.gca().set_aspect('equal')
-        plt.axis('off')
+        plt.plot(zz, prob_a)
+        # plt.pcolormesh(xx, yy, prob_a)
         if save:
             plt.savefig(prefix + 'a.png', dpi=300)
         plt.show(block=False)
@@ -168,36 +187,24 @@ def plot_results(model, target=True, a=False, base=False, save=False, prefix='')
     # print('KL divergence: %f' % kld)
 # }}}
 
-# Train models
-p = [nf.distributions.TwoMoons(), nf.distributions.CircularGaussianMixture(), nf.distributions.RingMixture(), nf.distributions.target.ConditionalDiagGaussian()]
-name = ['moons', 'circle', 'rings', 'conditional']
+# Train model with resampled base distribution
+model_resampled = create_model(base='resampled', outcome=yn, covariates=xn)
+loss_hist = np.array([])
+train(model_resampled, outcome=yn, covariates=xn, max_iter=2000)
+# model_gauss = create_model(base='gauss', outcome=yn, covariates=xn)
+# loss_hist = np.array([])
+# train(model_gauss, outcome=yn, covariates=xn, max_iter=5000)
 
-context_size = 2
+# Plot loss
+plt.plot(loss_hist, label='loss')
+plt.legend()
+plt.show()
 
-nf.distributions.target.ConditionalDiagGaussian().sample(num_samples=1000, context=context)
+# Plot and save results
+plot_results(model_resampled, save=False, a=False, base=False,
+             prefix='../figures/5000_cond_circ_gauss_resampled_')
 
-for i in range(len(p)):
-    i = 3
-    # Train model with Gaussain base distribution
-    model = create_model(p[i], 'gauss')
-    train(model, max_iter=2000)
-    # Plot and save results
-    plot_results(model, save=False,
-                 prefix='results/2d_distributions/fkld/rnvp/' 
-                 + name[i] + '_gauss_')
-    
-    # Train model with mixture of Gaussians base distribution
-    model = create_model(p[i], 'gaussian_mixture')
-    train(model)
-    # Plot and save results
-    plot_results(model, save=False,
-                 prefix='results/2d_distributions/fkld/rnvp/' 
-                 + name[i] + '_gaussian_mixture_')
-    
-    # Train model with resampled base distribution
-    # model = create_model(p[i], 'resampled')
-    model = create_model('resampled')
-    train(model, max_iter=500)
-    # Plot and save results
-    plot_results(model, save=True, a=False, target=False, base=True,
-                 prefix='../figures/cond_ring_resampled_')
+# Plot the target
+# plt.hist(yn.detach().numpy(), density=True, bins=100)
+plt.hist(d.detach().numpy(), density=True, bins=500)
+plt.show(block=False)
