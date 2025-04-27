@@ -18,6 +18,7 @@ print(torch.__config__.parallel_info())
 
 # Generate Target Population {{{
 N = 10**5
+N = 1000
 np.random.seed(63130)
 
 # Generate Covariates
@@ -31,15 +32,15 @@ x = torch.cat([
               dim=-1)
 
 # Generate the distribution for the error term = y | x
-# n_modes=3
-# dim=1
-# d = nf.distributions.GaussianMixture(n_modes=3, dim=1, trainable=True,
-#                                       loc=np.array([[-4.0], [1.0], [6.0]]),
-#                                       scale=np.array([[2.0], [1.2], [3.0]])).sample(N).float()
+n_modes=3
+dim=1
+target = nf.distributions.GaussianMixture(n_modes=3, dim=1, trainable=True,
+                                      loc=np.array([[-4.0], [1.0], [6.0]]),
+                                      scale=np.array([[2.0], [1.2], [3.0]])).float()
 
 ## 2D
 # target = nf.distributions.TwoMoons()
-target = nf.distributions.RingMixture()
+# target = nf.distributions.RingMixture()
 # target = nf.distributions.CircularGaussianMixture()
 d = target.sample(N)
 
@@ -175,6 +176,7 @@ def plot_results(model, dim=1, a=False, base=False, save=False, prefix=''):
 
     if base:
         log_prob = model.q0.log_prob(zz, context_plot).to('cpu').view(*zz.shape)
+        log_prob = flowTS.q0.log_prob(xx, cc).to('cpu').view(*zz.shape)
         prob = torch.exp(log_prob)
         prob[torch.isnan(prob)] = 0
         prob_base = prob.data.numpy()

@@ -1,12 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-'''
-@author: Yikun Zhang
-Last Editing: Dec 11, 2024
-
-Description: Simulation 2 with non-separable error in the outcome model.
-'''
-
 import numpy as np
 import torch
 import normflows as nf
@@ -68,9 +59,9 @@ def flow_model(base='resampled', outcome=None, contexts=None):
 
     latent_size = outcome.size()[1] # dimension of the latent space
     context_size = contexts.size()[1] # dimension of the context / contexts space
-    hidden_units = 256 # hidden_units for MaskedAffineAutoregressive
+    hidden_units = 512 # hidden_units for MaskedAffineAutoregressive
     num_blocks = 2 # block for MaskedAffineAutoregressive
-    b = torch.Tensor([1 if i % 2 == 0 else 0 for i in range(latent_size)])
+
     flows = []
     for i in range(K):
         flows += [nf.flows.MaskedAffineAutoregressive(latent_size, hidden_units, 
@@ -80,8 +71,8 @@ def flow_model(base='resampled', outcome=None, contexts=None):
 
     # Set prior and q0
     if base == 'resampled':
-        # a = nf.nets.MLP([latent_size, 64, 128, 256, 512, 256, 128, 1], output_fn='sigmoid') # 7 layers
-        a = nf.nets.MLP([latent_size, 256, 256, 1], output_fn='sigmoid') # 4 layers
+        a = nf.nets.MLP([latent_size, 64, 128, 256, 512, 1024, 512, 256, 128, 1], output_fn='sigmoid') # 8 layers
+        # a = nf.nets.MLP([latent_size, 256, 256, 1], output_fn='sigmoid') # 2 layers
         q0 = lf.distributions.ResampledGaussian(latent_size, a, 100, 0.1, trainable=False)
     elif base == 'gaussian_mixture':
         n_modes = 10
@@ -137,8 +128,8 @@ def train(model, outcome=None, contexts=None, boot_iter=10000, sample_size=1000,
 
 # reg_mod_lst = ['LR', 'RF', 'NN']
 reg_mod_lst = ['NN']
-cond_type = ['true', 'kde', 'nf']
-# cond_type = ['true', 'nf']
+cond_type = ['true', 'kde']
+cond_type = ['nf']
 fac_lst = [0.75, 1, 1.25, 1.5, 2]
 n_lst = [500, 1000, 2000]
 
@@ -149,7 +140,7 @@ for reg in reg_mod_lst:
         for cond in cond_type:
         # cond = 'true'
             for n in n_lst:
-            n = 1000
+            # n = 1000
                 rho = 0.5  # correlation between adjacent Xs
                 if n == 10000:
                     d = 100   # Dimension of the confounding variables
@@ -189,6 +180,7 @@ for reg in reg_mod_lst:
                 T_sim = scipy.stats.norm.cdf(3*np.dot(X_sim, theta)) + 3*nu/4 - 1/2
                 Y_sim = 1.2*T_sim + T_sim**2 + T_sim*X_sim[:,0] + 1.2*np.dot(X_sim, theta) + eps*np.sqrt(0.5+ scipy.stats.norm.cdf(X_sim[:,0]))
                 X_dat = np.column_stack([T_sim, X_sim])
+            
                 
                 
                 if reg == 'LR':
@@ -198,7 +190,7 @@ for reg in reg_mod_lst:
                 elif reg == 'NN':
                     reg_mod = MLPRegressor(hidden_layer_sizes=(10,), activation='relu', 
                                            learning_rate='adaptive', learning_rate_init=0.1, 
-                                           random_state=1, boot_iter=200)
+                                           random_state=1, max_iter=200)
                 # Bandwidth choice
                 h = fac*np.std(T_sim)*n**(-1/5)
                 
@@ -210,92 +202,108 @@ for reg in reg_mod_lst:
                     cond_mod = true_cond
                 elif cond == 'nf':
                     # convert to tensor
-                    T_sim_tensor = torch.tensor(T_sim).view(n, 1).to(device)
-                    X_sim_tensor = torch.tensor(X_sim).to(device)
-                    # set up flow model
+                    T_sim_tensor = torch.from_numpy(T_sim).view(n, 1).to(device)
+                    X_sim_tensor = torch.from_numpy(X_sim).to(device)
+
+                    # set up flow model and train
                     flowTS = flow_model(base='resampled', outcome=T_sim_tensor, contexts=X_sim_tensor)
-                    # log the loss and train the flow
                     loss_hist = np.array([])
                     train(model=flowTS, outcome=T_sim_tensor, contexts=X_sim_tensor,
                           boot_iter=10000, sample_size=n)
+
                     # plot the loss
                     plt.plot(loss_hist, label='loss')
-                    plt.savefig('../figures/loss_full.pdf')
+                    # plt.savefig('../figures/loss.pdf')
                     plt.show(block=False)
-                    zz = T_sim_tensor
-                    # context_temp = torch.tensor(0.1).to(device).repeat(zz.size()[0], 20)
-                    context_temp = X_sim_tensor
+
                     # calculate the conditional probability for the sample
-                    log_prob = flowTS.log_prob(zz, context_temp).to('cpu')
+                    log_prob = flowTS.log_prob(x=xx, context=cc).to('cpu')
                     prob = torch.exp(log_prob)
+                    # prob = torch.exp(log_prob).view(*T_sim_tensor.shape)
                     prob[torch.isnan(prob)] = 0
                     nf_cond = prob.detach().numpy()
-                    plt.bar(T_sim, height=nf_cond)
-                    # plt.savefig('../figures/estimated.pdf', dpi=300)
 
-                    plt.show()
+                    # plot the conditional prob for the sample
+                    plt.bar(T_sim, prob_base)
+                    # plt.bar(T_sim, nf_cond[:, 0])
+                    # plt.savefig('../figures/estimated.pdf', dpi=300)
+                    d = T_sim_tensor
+                    plt.show(block=False)
+                    # plot_results(flowTS, dim=1, save=False, a=True, base=False,
+                    #              prefix='../figures/10000_cond_rings_resampled_')
+                    plt.show(block=False)
                     cond_mod = nf_cond
-                    cond = 'true'
 
                     # plot the true density and estimation from nf
                     plt.bar(T_sim, true_cond)
-                    plt.savefig('../figures/truth.pdf', dpi=300)
+                    plt.bar(T_sim, condTS_est)
+                    # plt.savefig('../figures/kde.pdf', dpi=300)
                     plt.show(block=False)
 
                 elif cond == 'kde':
                     # cond = 'kde'
                     # Conditional density model
                     regr_nn2 = MLPRegressor(hidden_layer_sizes=(20,), activation='relu', learning_rate='adaptive', 
-                                    learning_rate_init=0.1, random_state=1, boot_iter=200)
+                                    learning_rate_init=0.1, random_state=1, max_iter=200)
                     cond_mod = regr_nn2
                 else:
                     cond_mod = cond_reg_mod
                     
-                # m_est_dr5, sd_est_dr5 = DRCurve(Y=Y_sim, X=X_dat, t_eval=t_qry, est='DR', 
-                #                                 mu=reg_mod, condTS_type=cond, condTS_mod=cond_mod,
-                #                                 tau=0.001, L=5, h=h, kern='epanechnikov', h_cond=None,
-                #                                 print_bw=False, self_norm=True)
+                if cond == 'nf':
+                    m_est_dr1, sd_est_dr1 = DRCurve(Y=Y_sim, X=X_dat, t_eval=t_qry, est='DR', 
+                                                    mu=reg_mod, condTS_type='true', condTS_mod=cond_mod, 
+                                                    tau=0.001, L=1, h=h, kern='epanechnikov', h_cond=None, 
+                                                    print_bw=False, self_norm=True)
+                    # m_est_dr5, sd_est_dr5 = DRCurve(Y=Y_sim, X=X_dat, t_eval=t_qry, est='DR', 
+                    #                                 mu=reg_mod, condTS_type='true', condTS_mod=cond_mod,
+                    #                                 tau=0.001, L=5, h=h, kern='epanechnikov', h_cond=None,
+                    #                                 print_bw=False, self_norm=True)
+                else:
+                    # m_est_dr5, sd_est_dr5 = DRCurve(Y=Y_sim, X=X_dat, t_eval=t_qry, est='DR', 
+                    #                                 mu=reg_mod, condTS_type=cond, condTS_mod=cond_mod,
+                    #                                 tau=0.001, L=5, h=h, kern='epanechnikov', h_cond=None,
+                    #                                 print_bw=False, self_norm=True)
+                    m_est_dr1, sd_est_dr1 = DRCurve(Y=Y_sim, X=X_dat, t_eval=t_qry, est='DR', 
+                                                    mu=reg_mod, condTS_type=cond, condTS_mod=cond_mod, 
+                                                    tau=0.001, L=1, h=h, kern='epanechnikov', h_cond=None, 
+                                                    print_bw=False, self_norm=True)
 
-                m_est_dr1, sd_est_dr1 = DRCurve(Y=Y_sim, X=X_dat, t_eval=t_qry, est='DR', 
-                                                mu=reg_mod, condTS_type=cond, condTS_mod=cond_mod, 
-                                                tau=0.001, L=1, h=h, kern='epanechnikov', h_cond=None, 
-                                                print_bw=False, self_norm=True)
-
-                # m_est_nf1, sd_est_nf1 = DRCurve(Y=Y_sim, X=X_dat, t_eval=t_qry, est='DR', 
-                #                                 mu=reg_mod, condTS_type=cond, condTS_mod=cond_mod, 
-                #                                 tau=0.001, L=1, h=h, kern='epanechnikov', h_cond=None, 
-                #                                 print_bw=False, self_norm=True)
+                with open('./Results/Simulation2_m_est'+str(job_id)+'_'+str(reg)+'_h'+str(fac)+'_condmod_'+str(cond)+'_n_'+str(n)+'_selfnorm.dat', 'wb+') as file:
+                    pickle.dump([m_est_dr1, sd_est_dr1], file)
+                
+                # if reg == 'LR':
+                #     reg_mod = LinearRegression()
+                # elif reg == 'RF':
+                #     reg_mod = RandomForestRegressor(n_estimators=100, max_depth=20, random_state=1)
+                # elif reg == 'NN':
+                #     reg_mod = NeurNet
                 #
-                # m_est_kde1, sd_est_kde1 = DRCurve(Y=Y_sim, X=X_dat, t_eval=t_qry, est='DR', 
-                #                                 mu=reg_mod, condTS_type=cond, condTS_mod=cond_mod, 
-                #                                 tau=0.001, L=1, h=h, kern='epanechnikov', h_cond=None, 
-                #                                 print_bw=False, self_norm=True)
+                # if cond == 'nf':
+                #     # theta_dr5, theta_sd5 = DRDerivCurve(Y=Y_sim, X=X_dat, t_eval=t_qry, est='DR', 
+                #     #                                             beta_mod=reg_mod, n_iter=1000, 
+                #     #                                   lr=0.01, condTS_type=cond, condTS_mod=cond_mod, 
+                #     #                                   tau=0.001, L=5, h=h, kern='epanechnikov', 
+                #     #                                   h_cond=None, print_bw=True, delta=0.01, self_norm=True)
+                #     theta_dr1, theta_sd1 = DRDerivCurve(Y=Y_sim, X=X_dat, t_eval=t_qry, est='DR', 
+                #                                                 beta_mod=reg_mod, n_iter=1000, 
+                #                                       lr=0.01, condTS_type=cond, condTS_mod=cond_mod, 
+                #                                       tau=0.001, L=1, h=h, kern='epanechnikov', h_cond=None, 
+                #                                       print_bw=True, delta=0.01, self_norm=True)
+                # else:
+                #     # theta_dr5, theta_sd5 = DRDerivCurve(Y=Y_sim, X=X_dat, t_eval=t_qry, est='DR', 
+                #     #                                             beta_mod=reg_mod, n_iter=1000, 
+                #     #                                   lr=0.01, condTS_type=cond, condTS_mod=cond_mod, 
+                #     #                                   tau=0.001, L=5, h=h, kern='epanechnikov', 
+                #     #                                   h_cond=None, print_bw=True, delta=0.01, self_norm=True)
+                #     theta_dr1, theta_sd1 = DRDerivCurve(Y=Y_sim, X=X_dat, t_eval=t_qry, est='DR', 
+                #                                                 beta_mod=reg_mod, n_iter=1000, 
+                #                                       lr=0.01, condTS_type=cond, condTS_mod=cond_mod, 
+                #                                       tau=0.001, L=1, h=h, kern='epanechnikov', h_cond=None, 
+                #                                       print_bw=True, delta=0.01, self_norm=True)
 
-                with open('../Results/Simulation2_m_est'+str(job_id)+'_'+str(reg)+'_h'+str(fac)+'_condmod_'+str(cond)+'_n_'+str(n)+'_selfnorm.dat', 'wb+') as file:
-                    # pickle.dump([m_est_dr5, sd_est_dr5, m_est_dr1, sd_est_dr1], file)
-                
-                if reg == 'LR':
-                    reg_mod = LinearRegression()
-                elif reg == 'RF':
-                    reg_mod = RandomForestRegressor(n_estimators=100, max_depth=20, random_state=1)
-                elif reg == 'NN':
-                    reg_mod = NeurNet
-                
-                # theta_dr5, theta_sd5 = DRDerivCurve(Y=Y_sim, X=X_dat, t_eval=t_qry, est='DR', 
-                #                                             beta_mod=reg_mod, n_iter=1000, 
-                #                                   lr=0.01, condTS_type=cond, condTS_mod=cond_mod, 
-                #                                   tau=0.001, L=5, h=h, kern='epanechnikov', 
-                #                                   h_cond=None, print_bw=True, delta=0.01, self_norm=True)
-                theta_dr1, theta_sd1 = DRDerivCurve(Y=Y_sim, X=X_dat, t_eval=t_qry, est='DR', 
-                                                            beta_mod=reg_mod, n_iter=1000, 
-                                                  lr=0.01, condTS_type=cond, condTS_mod=cond_mod, 
-                                                  tau=0.001, L=1, h=h, kern='epanechnikov', h_cond=None, 
-                                                  print_bw=True, delta=0.01, self_norm=True)
-                
-                
-                with open('./Results/Simulation2_theta_est'+str(job_id)+'_'+str(reg)+'_h'+str(fac)+'_condmod_'+str(cond)+'_n_'+str(n)+'_selfnorm.dat', 'wb+') as file:
-                    # pickle.dump([theta_dr5, theta_sd5, theta_dr1, theta_sd1], file)
-                    pickle.dump([theta_dr1, theta_sd1], file)
+                # with open('./Results/Simulation2_theta_est'+str(job_id)+'_'+str(reg)+'_h'+str(fac)+'_condmod_'+str(cond)+'_n_'+str(n)+'_selfnorm.dat', 'wb+') as file:
+                #     # pickle.dump([theta_dr5, theta_sd5, theta_dr1, theta_sd1], file)
+                #     pickle.dump([theta_dr1, theta_sd1], file)
 # }}}        
 
 #=======================================================================================#
