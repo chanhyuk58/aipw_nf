@@ -5,6 +5,9 @@ import normflows as nf
 import larsflow as lf
 from matplotlib import pyplot as plt
 from tqdm import tqdm
+import gc
+
+gc.collect()
 
 # Get device
 enable_cuda = True
@@ -18,7 +21,6 @@ print(torch.__config__.parallel_info())
 
 # Generate Target Population {{{
 N = 10**5
-N = 1000
 np.random.seed(63130)
 
 # Generate Covariates
@@ -32,15 +34,15 @@ x = torch.cat([
               dim=-1)
 
 # Generate the distribution for the error term = y | x
-n_modes=3
-dim=1
-target = nf.distributions.GaussianMixture(n_modes=3, dim=1, trainable=True,
-                                      loc=np.array([[-4.0], [1.0], [6.0]]),
-                                      scale=np.array([[2.0], [1.2], [3.0]])).float()
+# n_modes=3
+# dim=1
+# target = nf.distributions.GaussianMixture(n_modes=3, dim=1, trainable=True,
+#                                       loc=np.array([[-4.0], [1.0], [6.0]]),
+#                                       scale=np.array([[2.0], [1.2], [3.0]])).float()
 
-## 2D
+# 2D
 # target = nf.distributions.TwoMoons()
-# target = nf.distributions.RingMixture()
+target = nf.distributions.RingMixture()
 # target = nf.distributions.CircularGaussianMixture()
 d = target.sample(N)
 
@@ -69,7 +71,7 @@ def create_model(base='resampled', outcome=None, covariates=None):
 
     latent_size = outcome.size()[1] # dimension of the latent space
     context_size = covariates.size()[1] # dimension of the context / covariates space
-    hidden_units = 128 # hidden_units for MaskedAffineAutoregressive
+    hidden_units = 32 # hidden_units for MaskedAffineAutoregressive
     num_blocks = 2 # block for MaskedAffineAutoregressive
     b = torch.Tensor([1 if i % 2 == 0 else 0 for i in range(latent_size)])
     flows = []
@@ -81,7 +83,6 @@ def create_model(base='resampled', outcome=None, covariates=None):
 
     # Set prior and q0
     if base == 'resampled':
-        # a = nf.nets.MLP([latent_size, 128, 256, 512, 256, 128, 1], output_fn="sigmoid") # 5 layers
         a = nf.nets.MLP([latent_size, 256, 256, 1], output_fn="sigmoid") # layers
         q0 = lf.distributions.ResampledGaussian(latent_size, a, 100, 0.1, trainable=False)
     elif base == 'gaussian_mixture':
@@ -102,15 +103,16 @@ def create_model(base='resampled', outcome=None, covariates=None):
 # }}}
 
 # Function to train model {{{
-def train(model, covariates=None, outcome=None, max_iter=2000, sample_size=1000, lr=1e-3, weight_decay=1e-3, 
-          q0_weight_decay=1e-4):
+def train(model, covariates=None, outcome=None, max_iter=100000, sample_size=1000, lr=1e-3, 
+          weight_decay=1e-3, q0_weight_decay=1e-4, tol=1e-4):
     # Do mixed precision training
     optimizer = torch.optim.Adam(model.parameters(),  lr=lr, weight_decay=weight_decay)
     model.train()
 
     global loss_hist
+    iters = tqdm(range(max_iter))
 
-    for it in tqdm(range(max_iter)):
+    for it in iters:
         # Clear gradients
         nf.utils.clear_grad(model)
         optimizer.zero_grad()
@@ -120,18 +122,21 @@ def train(model, covariates=None, outcome=None, max_iter=2000, sample_size=1000,
         b_covariates = covariates[boot_idx]
         b_outcome = outcome[boot_idx]
 
-        # b_covariates = xn[boot_idx]
-        # b_outcome = yn[boot_idx]
-
         loss = model.forward_kld(x=b_outcome, context=b_covariates) # loss function is defined with forward KL divergence
         # loss = model.reverse_kld(b_outcome, b_covariates) # loss function is defined with reverse KL divergence
 
         if ~(torch.isnan(loss) | torch.isinf(loss)):
+            if it > 0:
+                if (-tol <= (loss_hist.min() - loss.detach().numpy()) <= tol):
+                    print('The loss has reached the good enough level. \nCurrent Loss: ' + str(loss) + '\nCurrent iteration: ' + str(it))
+                    break
             loss.backward(retain_graph=True)
             optimizer.step()
-            # Log loss
+            iters.set_postfix({'loss': str(loss.detach().numpy())})
 
         loss_hist = np.append(loss_hist, loss.to('cpu').data.numpy())
+
+
 # }}}
 
 # Plot function {{{
@@ -141,11 +146,11 @@ def plot_results(model, dim=1, a=False, base=False, save=False, prefix=''):
     if dim == 1:
         zz = torch.linspace(d.min(), d.max(), grid_size) # for 1d 
         zz = zz.to(device)
-        # zz = zz.view(zz.size()[0], 1)
-        context_plot = torch.tensor([0.0, 0.5, 0.0, 0.0, 0.0]).to(device).repeat(zz.size()[0], 1)
-        # context_plot = torch.tensor([0.1, 0.1]).to(device).repeat(zz.size()[0], 1)
+        zz = zz.view(zz.size()[0], 1)
+        context_plot = xn.mean(dim=0).to(device).repeat(zz.size()[0], 1)
+        # context_plot = torch.tensor([0.0, 0.5, 0.0, 0.0, 0.0]).to(device).repeat(zz.size()[0], 1)
         model.eval()
-        log_prob = model.log_prob(zz, context_plot).to('cpu')
+        log_prob = model_resampled.log_prob(zz, context_plot).to('cpu')
         # log_prob = model_resampled.log_prob(zz, context_plot).to('cpu')
         prob = torch.exp(log_prob).view(*zz.shape)
         plt.plot(zz, prob.detach().numpy())
@@ -208,20 +213,20 @@ def plot_results(model, dim=1, a=False, base=False, save=False, prefix=''):
 # Train model with resampled base distribution
 model_resampled = create_model(base='resampled', outcome=yn, covariates=xn)
 loss_hist = np.array([])
-train(model_resampled, outcome=yn, covariates=xn, max_iter=10000)
-
+train(model_resampled, outcome=yn, covariates=xn, tol=1e-5)
 
 # Plot loss
+loss_hist.min()
 plt.plot(loss_hist, label='loss')
-plt.legend()
-plt.show()
+plt.show(block=False)
+plt.savefig('../figures/loss_rings.pdf')
 
 # Plot and save results
 plot_results(model_resampled, dim=2, save=True, a=False, base=False,
-             prefix='../figures/10000_cond_rings_resampled_')
+             prefix='../figures/cond_rings_resampled_')
 
 # Plot 1D target
-# plt.hist(d.detach().numpy(), density=True, bins=500)
+plt.hist(d.detach().numpy(), density=True, bins=500)
 
 # Plot 2D target
 grid_size = 200
