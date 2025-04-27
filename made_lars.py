@@ -5,8 +5,6 @@ import normflows as nf
 import larsflow as lf
 from matplotlib import pyplot as plt
 from tqdm import tqdm
-# import pandas as pd
-# import seaborn as sns
 
 # Get device
 enable_cuda = True
@@ -16,6 +14,7 @@ device = torch.device(
     'mps' if torch.backends.mps.is_available() and enable_mps else
     'cpu'
 )
+print(torch.__config__.parallel_info())
 
 # Generate Target Population {{{
 N = 10**5
@@ -32,15 +31,17 @@ x = torch.cat([
               dim=-1)
 
 # Generate the distribution for the error term = y | x
-n_modes=3
-dim=1
-d = nf.distributions.GaussianMixture(n_modes=3, dim=1, trainable=True,
-                                      loc=np.array([[-4.0], [1.0], [6.0]]),
-                                      scale=np.array([[2.0], [1.2], [3.0]])).sample(N).float()
-# d = torch.distributions.categorical.Categorical(torch.tensor([ 0.25, 0.25, 0.25, 0.25 ])).sample(sample_shape=torch.Size([N, 1]))
-# d = nf.distributions.TwoMoons().sample(N)
-# d = nf.distributions.RingMixture().sample(N)
-# d = nf.distributions.CircularGaussianMixture().sample(N)
+# n_modes=3
+# dim=1
+# d = nf.distributions.GaussianMixture(n_modes=3, dim=1, trainable=True,
+#                                       loc=np.array([[-4.0], [1.0], [6.0]]),
+#                                       scale=np.array([[2.0], [1.2], [3.0]])).sample(N).float()
+
+## 2D
+# target = nf.distributions.TwoMoons()
+target = nf.distributions.RingMixture()
+# target = nf.distributions.CircularGaussianMixture()
+d = target.sample(N)
 
 # y = d + x[:,0].view(N, 1) + x[:,1].view(N, 1)
 
@@ -52,7 +53,8 @@ xn = x[sample_idx].to(device)
 dn = d[sample_idx].to(device)
 
 yn = torch.cat([
-    dn.view(sample_size, 1) + xn.sum(dim=1).view(sample_size, 1), 
+    dn[:,0].view(sample_size, 1) + xn.sum(dim=1).view(sample_size, 1), 
+    dn[:,1].view(sample_size, 1) + xn.sum(dim=1).view(sample_size, 1), 
 ], dim=-1)
 # }}}
 
@@ -132,29 +134,43 @@ def train(model, covariates=None, outcome=None, max_iter=2000, sample_size=1000,
 # }}}
 
 # Plot function {{{
-def plot_results(model, a=False, base=False, save=False, prefix=''):
+def plot_results(model, dim=1, a=False, base=False, save=False, prefix=''):
     # Prepare z grid for evaluation
     grid_size = 200
-    # xx, yy = torch.meshgrid(torch.linspace(-5, 5, grid_size), torch.linspace(-5, 5, grid_size))
-    # zz = torch.cat([xx.unsqueeze(2), yy.unsqueeze(2)], 2).view(-1, 2)
-    zz = torch.linspace(d.min(), d.max(), grid_size)
-    zz = zz.to(device)
-    zz = zz.view(zz.size()[0], 1)
-    context_plot = torch.tensor([0.1, 0.1, 0.1, 0.1, 0.1]).to(device).repeat(zz.size()[0], 1)
-    # context_plot = torch.tensor([0.1, 0.1]).to(device).repeat(zz.size()[0], 1)
-    model.eval()
-    log_prob = model.log_prob(zz, context_plot).to('cpu').view(*zz.shape)
+    if dim == 1:
+        zz = torch.linspace(d.min(), d.max(), grid_size) # for 1d 
+        zz = zz.to(device)
+        # zz = zz.view(zz.size()[0], 1)
+        context_plot = torch.tensor([0.0, 0.5, 0.0, 0.0, 0.0]).to(device).repeat(zz.size()[0], 1)
+        # context_plot = torch.tensor([0.1, 0.1]).to(device).repeat(zz.size()[0], 1)
+        model.eval()
+        log_prob = model.log_prob(zz, context_plot).to('cpu')
+        # log_prob = model_resampled.log_prob(zz, context_plot).to('cpu')
+        prob = torch.exp(log_prob).view(*zz.shape)
+        plt.plot(zz, prob.detach().numpy())
+    elif dim==2:
+        xx, yy = torch.meshgrid(torch.linspace(-5, 5, grid_size), torch.linspace(-5, 5, grid_size))
+        zz = torch.cat([xx.unsqueeze(2), yy.unsqueeze(2)], 2).view(-1, 2) # for 2d
+        zz = zz.to(device)
+        # zz = zz.view(zz.size()[0], 1)
+        # context_plot = torch.tensor([-0.05, 0.05, 0.15, -0.05, 0.05]).to(device).repeat(zz.size()[0], 1)
+        context_plot = xn.median(dim=0).values.to(device).repeat(zz.size()[0], 1)
+        
+        # context_plot = torch.tensor([0.1, 0.1]).to(device).repeat(zz.size()[0], 1)
+        model.eval()
+        log_prob = model.log_prob(zz, context_plot).to('cpu')
+        # log_prob = model_resampled.log_prob(zz, context_plot).to('cpu')
+        prob = torch.exp(log_prob).view(*xx.shape)
+        prob[torch.isnan(prob)] = 0
+        prob_model = prob.data.numpy()
 
-    prob = torch.exp(log_prob)
-    prob[torch.isnan(prob)] = 0
-    prob_model = prob.data.numpy()
+        # plt.figure(figsize=(15, 15))
+        plt.pcolormesh(xx, yy, prob_model)
+    else:
+        print('error: check the input dimension')
 
-    plt.figure(figsize=(15, 15))
-    # plt.pcolormesh(xx, yy, prob_model)
-    # plt.plot(prob_model)
-    plt.plot(zz, prob.detach().numpy())
     if save:
-        plt.savefig(prefix + 'model.png', dpi=300)
+        plt.savefig(prefix + 'model.pdf', dpi=300)
     plt.show(block=False)
 
     if base:
@@ -163,22 +179,22 @@ def plot_results(model, a=False, base=False, save=False, prefix=''):
         prob[torch.isnan(prob)] = 0
         prob_base = prob.data.numpy()
 
-        plt.figure(figsize=(15, 15))
+        # plt.figure(figsize=(15, 15))
         plt.plot(zz, prob_base)
         # plt.pcolormesh(xx, yy, prob_base)
         if save:
-            plt.savefig(prefix + 'base.png', dpi=300)
+            plt.savefig(prefix + 'base.pdf', dpi=300)
         plt.show(block=False)
     
     if a:
         prob = model.q0.a(zz).to('cpu').view(*xx.shape)
         prob[torch.isnan(prob)] = 0
         prob_a = prob.data.numpy()
-        plt.figure(figsize=(15, 15))
+        # plt.figure(figsize=(15, 15))
         plt.plot(zz, prob_a)
         # plt.pcolormesh(xx, yy, prob_a)
         if save:
-            plt.savefig(prefix + 'a.png', dpi=300)
+            plt.savefig(prefix + 'a.pdf', dpi=300)
         plt.show(block=False)
     
     # # Compute KLD
@@ -190,10 +206,8 @@ def plot_results(model, a=False, base=False, save=False, prefix=''):
 # Train model with resampled base distribution
 model_resampled = create_model(base='resampled', outcome=yn, covariates=xn)
 loss_hist = np.array([])
-train(model_resampled, outcome=yn, covariates=xn, max_iter=2000)
-# model_gauss = create_model(base='gauss', outcome=yn, covariates=xn)
-# loss_hist = np.array([])
-# train(model_gauss, outcome=yn, covariates=xn, max_iter=5000)
+train(model_resampled, outcome=yn, covariates=xn, max_iter=10000)
+
 
 # Plot loss
 plt.plot(loss_hist, label='loss')
@@ -201,10 +215,22 @@ plt.legend()
 plt.show()
 
 # Plot and save results
-plot_results(model_resampled, save=False, a=False, base=False,
-             prefix='../figures/5000_cond_circ_gauss_resampled_')
+plot_results(model_resampled, dim=2, save=True, a=False, base=False,
+             prefix='../figures/10000_cond_rings_resampled_')
 
-# Plot the target
-# plt.hist(yn.detach().numpy(), density=True, bins=100)
-plt.hist(d.detach().numpy(), density=True, bins=500)
+# Plot 1D target
+# plt.hist(d.detach().numpy(), density=True, bins=500)
+
+# Plot 2D target
+grid_size = 200
+xx, yy = torch.meshgrid(torch.linspace(-5, 5, grid_size), torch.linspace(-5, 5, grid_size), indexing='ij')
+zz = torch.cat([xx.unsqueeze(2), yy.unsqueeze(2)], 2).view(-1, 2)
+zz = zz.to(device)
+logp = target.log_prob(zz)
+p_target = torch.exp(logp).view(*xx.shape).cpu().data.numpy()
+
+plt.pcolormesh(xx, yy, p_target)
+
+# Save and show
+plt.savefig('../figures/10000_cond_rings_truth.pdf')
 plt.show(block=False)

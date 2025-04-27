@@ -101,7 +101,7 @@ def flow_model(base='resampled', outcome=None, contexts=None):
 # }}}
 
 # Function to train a flow model {{{
-def train(model, outcome=None, contexts=None, max_iter=2000, sample_size=1000, lr=1e-3, weight_decay=1e-3, 
+def train(model, outcome=None, contexts=None, boot_iter=10000, sample_size=1000, lr=1e-3, weight_decay=1e-3, 
           q0_weight_decay=1e-4):
     # Do mixed precision training
     optimizer = torch.optim.Adam(model.parameters(),  lr=lr, weight_decay=weight_decay)
@@ -109,7 +109,7 @@ def train(model, outcome=None, contexts=None, max_iter=2000, sample_size=1000, l
 
     global loss_hist
 
-    for it in tqdm(range(max_iter)):
+    for it in tqdm(range(boot_iter)):
         # Clear gradients
         nf.utils.clear_grad(model)
         optimizer.zero_grad()
@@ -137,8 +137,8 @@ def train(model, outcome=None, contexts=None, max_iter=2000, sample_size=1000, l
 
 # reg_mod_lst = ['LR', 'RF', 'NN']
 reg_mod_lst = ['NN']
-# cond_type = ['true', 'kde', 'nf']
-cond_type = ['true', 'nf']
+cond_type = ['true', 'kde', 'nf']
+# cond_type = ['true', 'nf']
 fac_lst = [0.75, 1, 1.25, 1.5, 2]
 n_lst = [500, 1000, 2000]
 
@@ -198,7 +198,7 @@ for reg in reg_mod_lst:
                 elif reg == 'NN':
                     reg_mod = MLPRegressor(hidden_layer_sizes=(10,), activation='relu', 
                                            learning_rate='adaptive', learning_rate_init=0.1, 
-                                           random_state=1, max_iter=200)
+                                           random_state=1, boot_iter=200)
                 # Bandwidth choice
                 h = fac*np.std(T_sim)*n**(-1/5)
                 
@@ -217,9 +217,10 @@ for reg in reg_mod_lst:
                     # log the loss and train the flow
                     loss_hist = np.array([])
                     train(model=flowTS, outcome=T_sim_tensor, contexts=X_sim_tensor,
-                          max_iter=100000, sample_size=n)
+                          boot_iter=10000, sample_size=n)
                     # plot the loss
                     plt.plot(loss_hist, label='loss')
+                    plt.savefig('../figures/loss_full.pdf')
                     plt.show(block=False)
                     zz = T_sim_tensor
                     # context_temp = torch.tensor(0.1).to(device).repeat(zz.size()[0], 20)
@@ -230,19 +231,22 @@ for reg in reg_mod_lst:
                     prob[torch.isnan(prob)] = 0
                     nf_cond = prob.detach().numpy()
                     plt.bar(T_sim, height=nf_cond)
+                    # plt.savefig('../figures/estimated.pdf', dpi=300)
+
                     plt.show()
                     cond_mod = nf_cond
                     cond = 'true'
 
                     # plot the true density and estimation from nf
                     plt.bar(T_sim, true_cond)
+                    plt.savefig('../figures/truth.pdf', dpi=300)
                     plt.show(block=False)
 
                 elif cond == 'kde':
                     # cond = 'kde'
                     # Conditional density model
                     regr_nn2 = MLPRegressor(hidden_layer_sizes=(20,), activation='relu', learning_rate='adaptive', 
-                                    learning_rate_init=0.1, random_state=1, max_iter=200)
+                                    learning_rate_init=0.1, random_state=1, boot_iter=200)
                     cond_mod = regr_nn2
                 else:
                     cond_mod = cond_reg_mod
