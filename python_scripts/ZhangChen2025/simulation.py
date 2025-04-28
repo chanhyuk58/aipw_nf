@@ -78,9 +78,11 @@ def flow_model(base='resampled', outcome=None, contexts=None):
         q0 = lf.distributions.ResampledGaussian(latent_size, a, 100, 0.1, trainable=False)
     elif base == 'gaussian_mixture':
         n_modes = 10
-        q0 = nf.distributions.GaussianMixture(n_modes, latent_size, trainable=True,
-                                              loc=(np.random.rand(n_modes, latent_size) - 0.5) * 5,
-                                              scale=0.5 * np.ones((n_modes, latent_size)))
+        q0 = nf.distributions.GaussianMixture(
+            n_modes, latent_size, trainable=True,
+            loc=(np.random.rand(n_modes, latent_size) - 0.5) * 5,
+            scale=0.5 * np.ones((n_modes, latent_size))
+        )
     elif base == 'gauss':
         q0 = nf.distributions.DiagGaussian(latent_size, trainable=False)
     else:
@@ -101,6 +103,8 @@ def train(model, outcome=None, contexts=None, boot_iter=100000, sample_size=1000
     model.train()
 
     global loss_hist
+    loss_hist = np.array([])
+
     iters = tqdm(range(boot_iter))
     for it in iters:
         # Clear gradients
@@ -119,10 +123,9 @@ def train(model, outcome=None, contexts=None, boot_iter=100000, sample_size=1000
         # loss = model.reverse_kld(b_outcome, b_contexts) # loss function is defined with reverse KL divergence
 
         if ~(torch.isnan(loss) | torch.isinf(loss)):
-            if it > 0:
-                if ((abs(loss_hist.min() - loss.detach().numpy()) <= tol) | (loss.detach().numpy() < 1)):
-                    print('The loss has reached the good enough level. \nCurrent Loss: ' + str(loss) + '\nCurrent iteration: ' + str(it))
-                    break
+            if (it > 0) and ((abs(loss_hist.min() - loss.detach().numpy()) <= tol) | (loss.detach().numpy() < 1)):
+                print('The loss has reached the good enough level. \nCurrent Loss: ' + str(loss) + '\nCurrent iteration: ' + str(it))
+                break
             loss.backward(retain_graph=True)
             optimizer.step()
             iters.set_postfix({'loss': str(loss.detach().numpy())})
@@ -217,7 +220,6 @@ for reg in regiter:
 
                     # set up flow model and train
                     flowTS = flow_model(base='resampled', outcome=T_sim_tensor, contexts=X_sim_tensor)
-                    loss_hist = np.array([])
                     train(model=flowTS, outcome=T_sim_tensor, contexts=X_sim_tensor, sample_size=n, tol=1e-4)
 
                     # check and plot the loss
@@ -390,10 +392,6 @@ for n in niter:
     col_lst = ['tab:cyan', 'red', 'green', 'blue', 'grey']
     col_lab = [r'$\widehat{m}_{\mathrm{DR}}(t)$ (True)', r'$\widehat{m}_{\mathrm{DR}}(t)$ (Residual KDE)', r'$\widehat{m}_{\mathrm{DR}}(t)$ (NF)']
     mark_lst = ["o", "v", "^", "<", "P", "X", ">"]
-    # col_lst2 = ['tab:brown', 'darkorange', 'darkblue']
-    # for i in range(res_bias2.shape[1] - 1):
-    #     ax[0][j].plot(t_qry, res_bias2.iloc[:,i+1], markersize=7, linewidth=3, marker=mark_lst[i+4], 
-    #                   label=res_bias2.columns[i+1], color=col_lst2[i], alpha=0.8)
     for i in range(res_bias2.shape[1] - 1):
         ax[0][j].plot(t_qry, res_bias2.iloc[:,i+1], markersize=7, linewidth=3, marker=mark_lst[i], 
                       label=col_lab[i], color=col_lst[i], alpha=0.8)
@@ -403,9 +401,6 @@ for n in niter:
     # ax[0][3].legend(bbox_to_anchor=(1, 0.9))
     
     # Plotting RMSE
-    # for i in range(res_rmse2.shape[1] - 1):
-    #     ax[1][j].plot(t_qry, res_rmse2.iloc[:,i+1], linewidth=3, markersize=8, marker=mark_lst[i+4], 
-    #                   label=res_rmse2.columns[i+1], color=col_lst2[i], alpha=0.8)
     for i in range(res_rmse2.shape[1] - 1):
         ax[1][j].plot(t_qry, res_rmse2.iloc[:,i+1], linewidth=3, markersize=7, marker=mark_lst[i], 
                       label=col_lab[i], color=col_lst[i], alpha=0.8)
@@ -415,10 +410,6 @@ for n in niter:
     ax[1][1].legend(bbox_to_anchor=(1.2, -0.1), fontsize=20, ncol=len(cond_type))
     
     # Plotting Coverage
-    # ax[2][j].axhline(y=0.95, color='black', linestyle='dashed', linewidth=5, alpha=0.5, label='Nominal level')
-    # # for i in range(res_cov2.shape[1] - 1):
-    # #     ax[2][j].plot(t_qry, res_cov2.iloc[:,i+1], linewidth=3, markersize=7, marker=mark_lst[i+4], 
-    # #                   label=res_cov2.columns[i+1], color=col_lst2[i])
     # for i in range(res_cov2.shape[1] - 1):
     #     ax[2][j].plot(t_qry, res_cov2.iloc[:,i+1], linewidth=3, markersize=7, marker=mark_lst[i], 
     #                   label=col_lab[i], color=col_lst[i], alpha=0.8)

@@ -110,8 +110,9 @@ def train(model, covariates=None, outcome=None, max_iter=100000, sample_size=100
     model.train()
 
     global loss_hist
-    iters = tqdm(range(max_iter))
+    loss_hist = np.array([])
 
+    iters = tqdm(range(max_iter))
     for it in iters:
         # Clear gradients
         nf.utils.clear_grad(model)
@@ -126,21 +127,18 @@ def train(model, covariates=None, outcome=None, max_iter=100000, sample_size=100
         # loss = model.reverse_kld(b_outcome, b_covariates) # loss function is defined with reverse KL divergence
 
         if ~(torch.isnan(loss) | torch.isinf(loss)):
-            if it > 0:
-                if (-tol <= (loss_hist.min() - loss.detach().numpy()) <= tol):
-                    print('The loss has reached the good enough level. \nCurrent Loss: ' + str(loss) + '\nCurrent iteration: ' + str(it))
-                    break
+            if (it > 0) and (abs(loss_hist.min() - loss.detach().numpy()) <= tol | loss.detach().numpy() < 1):
+                print('The loss has reached the good enough level. \nCurrent Loss: ' + str(loss) + '\nCurrent iteration: ' + str(it))
+                break
             loss.backward(retain_graph=True)
             optimizer.step()
             iters.set_postfix({'loss': str(loss.detach().numpy())})
 
         loss_hist = np.append(loss_hist, loss.to('cpu').data.numpy())
-
-
 # }}}
 
 # Plot function {{{
-def plot_results(model, dim=1, a=False, base=False, save=False, prefix=''):
+def plot_results(model, dim=1, target=False, loss=False, a=False, base=False, save=False, prefix=''):
     # Prepare z grid for evaluation
     grid_size = 200
     if dim == 1:
@@ -154,7 +152,7 @@ def plot_results(model, dim=1, a=False, base=False, save=False, prefix=''):
         # log_prob = model_resampled.log_prob(zz, context_plot).to('cpu')
         prob = torch.exp(log_prob).view(*zz.shape)
         plt.plot(zz, prob.detach().numpy())
-    elif dim==2:
+    elif dim == 2:
         xx, yy = torch.meshgrid(torch.linspace(-5, 5, grid_size), torch.linspace(-5, 5, grid_size))
         zz = torch.cat([xx.unsqueeze(2), yy.unsqueeze(2)], 2).view(-1, 2) # for 2d
         zz = zz.to(device)
@@ -178,6 +176,27 @@ def plot_results(model, dim=1, a=False, base=False, save=False, prefix=''):
     if save:
         plt.savefig(prefix + 'model.pdf', dpi=300)
     plt.show(block=False)
+
+    if target and (dim == 1):
+        # Plot 1D target
+        plt.hist(d.detach().numpy(), density=True, bins=500)
+
+        if save:
+            plt.savefig(prefix + 'truth.pdf')
+        plt.show(block=False)
+    if target and (dim == 2):
+        # Plot 2D target
+        grid_size = 200
+        xx, yy = torch.meshgrid(torch.linspace(-5, 5, grid_size), torch.linspace(-5, 5, grid_size), indexing='ij')
+        zz = torch.cat([xx.unsqueeze(2), yy.unsqueeze(2)], 2).view(-1, 2)
+        zz = zz.to(device)
+        logp = target.log_prob(zz)
+        p_target = torch.exp(logp).view(*xx.shape).cpu().data.numpy()
+        plt.pcolormesh(xx, yy, p_target)
+
+        if save:
+            plt.savefig(prefix + 'truth.pdf')
+            plt.show(block=False)
 
     if base:
         log_prob = model.q0.log_prob(zz, context_plot).to('cpu').view(*zz.shape)
@@ -203,41 +222,20 @@ def plot_results(model, dim=1, a=False, base=False, save=False, prefix=''):
         if save:
             plt.savefig(prefix + 'a.pdf', dpi=300)
         plt.show(block=False)
-    
-    # # Compute KLD
-    # eps = 1e-10
-    # kld = np.sum(prob_target * np.log((prob_target + eps) / (prob_model + eps)) * 6 ** 2 / grid_size ** 2)
-    # print('KL divergence: %f' % kld)
+    if loss:
+        # Plot loss
+        loss_hist.min()
+        plt.plot(loss_hist, label='loss')
+        plt.show(block=False)
+        if save: 
+            plt.savefig(prefix + 'loss.pdf')
 # }}}
 
 # Train model with resampled base distribution
 model_resampled = create_model(base='resampled', outcome=yn, covariates=xn)
-loss_hist = np.array([])
 train(model_resampled, outcome=yn, covariates=xn, tol=1e-5)
 
-# Plot loss
-loss_hist.min()
-plt.plot(loss_hist, label='loss')
-plt.show(block=False)
-plt.savefig('../figures/loss_rings.pdf')
 
 # Plot and save results
-plot_results(model_resampled, dim=2, save=True, a=False, base=False,
-             prefix='../figures/cond_rings_resampled_')
-
-# Plot 1D target
-plt.hist(d.detach().numpy(), density=True, bins=500)
-
-# Plot 2D target
-grid_size = 200
-xx, yy = torch.meshgrid(torch.linspace(-5, 5, grid_size), torch.linspace(-5, 5, grid_size), indexing='ij')
-zz = torch.cat([xx.unsqueeze(2), yy.unsqueeze(2)], 2).view(-1, 2)
-zz = zz.to(device)
-logp = target.log_prob(zz)
-p_target = torch.exp(logp).view(*xx.shape).cpu().data.numpy()
-
-plt.pcolormesh(xx, yy, p_target)
-
-# Save and show
-plt.savefig('../figures/10000_cond_rings_truth.pdf')
-plt.show(block=False)
+plot_results(model_resampled, dim=2, target=True, loss=True, a=False, base=False,
+             save=True, prefix='../figures/cond_rings_resampled_')
