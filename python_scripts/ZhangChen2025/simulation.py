@@ -250,19 +250,19 @@ for reg in regiter:
                 else:
                     cond_mod = cond_reg_mod
                     
-                # if cond == 'nf':
-                #     m_est_dr1, sd_est_dr1 = DRCurve(Y=Y_sim, X=X_dat, t_eval=t_qry, est='DR', 
-                #                                     mu=reg_mod, condTS_type='true', condTS_mod=cond_mod, 
-                #                                     tau=0.001, L=1, h=h, kern='epanechnikov', h_cond=None, 
-                #                                     print_bw=False, self_norm=True)
-                # else:
-                #     m_est_dr1, sd_est_dr1 = DRCurve(Y=Y_sim, X=X_dat, t_eval=t_qry, est='DR', 
-                #                                     mu=reg_mod, condTS_type=cond, condTS_mod=cond_mod, 
-                #                                     tau=0.001, L=1, h=h, kern='epanechnikov', h_cond=None, 
-                #                                     print_bw=False, self_norm=True)
-                #
-                # with open('./Results/Simulation2_m_est'+str(job_id)+'_'+str(reg)+'_h'+str(fac)+'_condmod_'+str(cond)+'_n_'+str(n)+'_selfnorm.dat', 'wb+') as file:
-                #     pickle.dump([m_est_dr1, sd_est_dr1], file)
+                if cond == 'nf':
+                    m_est_dr1, sd_est_dr1 = DRCurve(Y=Y_sim, X=X_dat, t_eval=t_qry, est='DR', 
+                                                    mu=reg_mod, condTS_type='true', condTS_mod=cond_mod, 
+                                                    tau=0.001, L=1, h=h, kern='epanechnikov', h_cond=None, 
+                                                    print_bw=False, self_norm=True)
+                else:
+                    m_est_dr1, sd_est_dr1 = DRCurve(Y=Y_sim, X=X_dat, t_eval=t_qry, est='DR', 
+                                                    mu=reg_mod, condTS_type=cond, condTS_mod=cond_mod, 
+                                                    tau=0.001, L=1, h=h, kern='epanechnikov', h_cond=None, 
+                                                    print_bw=False, self_norm=True)
+
+                with open('./Results/Simulation2_m_est'+str(job_id)+'_'+str(reg)+'_h'+str(fac)+'_condmod_'+str(cond)+'_n_'+str(n)+'_selfnorm.dat', 'wb+') as file:
+                    pickle.dump([m_est_dr1, sd_est_dr1], file)
                 
                 if reg == 'LR':
                     reg_mod = LinearRegression()
@@ -338,12 +338,102 @@ m_true = 1.2*t_qry + t_qry**2
 theta_true = 1.2 + 2*t_qry
 
 # Produce figures
+reg = 'NN'
 fac_lst = [0.75, 1, 1.25, 1.5, 2]
 cond_type = ['true', 'kde', 'nf']
 n_lst = [500, 1000, 2000]
 model_lst = ['nn']
 
-# Plot {{{
+# Plot m(t) {{{
+j = 0
+fac = 2
+plt.rcParams.update({'font.size': 23})
+fig, ax = plt.subplots(2, 3, figsize=(26, 16))
+niter = tqdm(n_lst)
+for n in niter:
+    conditer = tqdm(cond_type)
+    for cond in conditer:
+        print(cond)
+        with open('./Results/Simulation2_m_est'+str(job_id)+'_'+str(reg)+'_h'+str(fac)+'_condmod_'+str(cond)+'_n_'+str(n)+'_selfnorm.dat', "rb") as file:
+            m_dr1_lst, sd_dr1_lst = pickle.load(file)
+        
+        # Bias
+        m_dr1_bias = Bias([np.array(m_dr1_lst)], m_true)
+        
+        # RMSE
+        m_dr1_rmse = RMSE([np.array(m_dr1_lst)], m_true)
+        
+        # Coverage
+        m_dr1_cov = CovProb([np.array(m_dr1_lst)], np.array(sd_dr1_lst), m_true, alpha=0.95)
+        
+        if cond == 'true':
+            res_bias = np.column_stack([t_qry, m_dr1_bias])
+            res_rmse = np.column_stack([t_qry, m_dr1_rmse])
+            res_cov = np.column_stack([t_qry, m_dr1_cov])
+        else:
+            res_bias = np.column_stack([res_bias, m_dr1_bias])
+            res_rmse = np.column_stack([res_rmse, m_dr1_rmse])
+            res_cov = np.column_stack([res_cov, m_dr1_cov])
+                                           
+    
+    res_bias2 = pd.DataFrame(res_bias)
+    res_bias2.columns = ['Query point', 'DR (true, L=1)', 'DR (Residual KDE, L=1)', 'DR (nf, L=1)']
+    
+    res_rmse2 = pd.DataFrame(res_rmse)
+    res_rmse2.columns = ['Query point', 'DR (true, L=1)', 'DR (Residual KDE, L=1)', 'DR (nf, L=1)']
+    
+    res_cov2 = pd.DataFrame(res_cov)
+    res_cov2.columns = ['Query point', 'DR (true, L=1)', 'DR (Residual KDE, L=1)', 'DR (nf, L=1)']
+    
+    # Plotting bias
+    ax[0][j].axhline(y=0, color='black', linestyle='dashed', linewidth=5, alpha=0.5)
+    col_lst = ['tab:cyan', 'red', 'green', 'blue', 'grey']
+    col_lab = [r'$\widehat{m}_{\mathrm{DR}}(t)$ (True)', r'$\widehat{m}_{\mathrm{DR}}(t)$ (Residual KDE)', r'$\widehat{m}_{\mathrm{DR}}(t)$ (NF)']
+    mark_lst = ["o", "v", "^", "<", "P", "X", ">"]
+    # col_lst2 = ['tab:brown', 'darkorange', 'darkblue']
+    # for i in range(res_bias2.shape[1] - 1):
+    #     ax[0][j].plot(t_qry, res_bias2.iloc[:,i+1], markersize=7, linewidth=3, marker=mark_lst[i+4], 
+    #                   label=res_bias2.columns[i+1], color=col_lst2[i], alpha=0.8)
+    for i in range(res_bias2.shape[1] - 1):
+        ax[0][j].plot(t_qry, res_bias2.iloc[:,i+1], markersize=7, linewidth=3, marker=mark_lst[i], 
+                      label=col_lab[i], color=col_lst[i], alpha=0.8)
+    # ax[0][j].set_xlabel(r'Query point $T=t$')
+    ax[0][0].set_ylabel(r'Bias for $m(t)$')
+    ax[0][j].set_title(r'$n=$'+str(n))
+    # ax[0][3].legend(bbox_to_anchor=(1, 0.9))
+    
+    # Plotting RMSE
+    # for i in range(res_rmse2.shape[1] - 1):
+    #     ax[1][j].plot(t_qry, res_rmse2.iloc[:,i+1], linewidth=3, markersize=8, marker=mark_lst[i+4], 
+    #                   label=res_rmse2.columns[i+1], color=col_lst2[i], alpha=0.8)
+    for i in range(res_rmse2.shape[1] - 1):
+        ax[1][j].plot(t_qry, res_rmse2.iloc[:,i+1], linewidth=3, markersize=7, marker=mark_lst[i], 
+                      label=col_lab[i], color=col_lst[i], alpha=0.8)
+    # ax[1][j].set_xlabel(r'Query point $T=t$')
+    ax[1][j].set_ylim([-0.5, 7])
+    ax[1][0].set_ylabel(r'RMSE for $m(t)$')
+    ax[1][1].legend(bbox_to_anchor=(1.2, -0.1), fontsize=20, ncol=len(cond_type))
+    
+    # Plotting Coverage
+    # ax[2][j].axhline(y=0.95, color='black', linestyle='dashed', linewidth=5, alpha=0.5, label='Nominal level')
+    # # for i in range(res_cov2.shape[1] - 1):
+    # #     ax[2][j].plot(t_qry, res_cov2.iloc[:,i+1], linewidth=3, markersize=7, marker=mark_lst[i+4], 
+    # #                   label=res_cov2.columns[i+1], color=col_lst2[i])
+    # for i in range(res_cov2.shape[1] - 1):
+    #     ax[2][j].plot(t_qry, res_cov2.iloc[:,i+1], linewidth=3, markersize=7, marker=mark_lst[i], 
+    #                   label=col_lab[i], color=col_lst[i], alpha=0.8)
+    # ax[2][j].set_xlabel(r'Treatment value $t$')
+    # ax[2][0].set_ylabel(r'Coverage rates for $m(t)$')
+    # ax[2][j].set_ylim([0.56, 1])
+    
+    j += 1
+fig.align_ylabels()
+fig.tight_layout()
+fig.subplots_adjust(wspace=0.2, hspace=0.11)
+fig.savefig('../figures/m.pdf')
+# }}}
+
+# Plot theta(t) {{{
 j = 0
 plt.rcParams.update({'font.size': 23})
 fig, ax = plt.subplots(2, 3, figsize=(26, 16))
