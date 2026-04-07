@@ -11,4 +11,4 @@ RUN pip install --no-cache-dir --upgrade pip
 COPY ./python_scripts/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY ./python_scripts/larsflow/* .
+COPY ./python_scripts/larsflow/ .
