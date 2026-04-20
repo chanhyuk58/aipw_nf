@@ -1,5 +1,24 @@
-# Compiled source #
-###################
+############################
+# OS files (macOS / Windows)
+############################
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+############################
+# Logs / databases
+############################
+*.log
+*.sql
+*.sqlite
+
+############################
+# Compiled binaries
+############################
 *.com
 *.class
 *.dll
@@ -7,10 +26,9 @@
 *.o
 *.so
 
-# Packages #
-############
-# it's better to unpack these files and commit the raw source
-# git has its own built in compression methods
+############################
+# Archives / packages
+############################
 *.7z
 *.dmg
 *.gz
@@ -20,18 +38,54 @@
 *.tar
 *.zip
 
-# Logs and databases #
-######################
-*.log
-*.sql
-*.sqlite
+############################
+# LaTeX auxiliary files
+############################
+*.aux
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.nav
+*.snm
+*.bbl
+*.blg
 
-# OS generated files #
-######################
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+############################
+# R
+############################
+.RData
+.Rhistory
+.Rproj.user/
+
+############################
+# Python
+############################
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+############################
+# Jupyter (if you ever use it)
+############################
+.ipynb_checkpoints/
+
+############################
+# Figures / outputs (OPTIONAL)
+############################
+# Uncomment if you don't want generated figures tracked
+# figures/*.pdf
+# figures/*.png
+
+############################
+# Data (OPTIONAL — careful)
+############################
+# python_scripts/Results/
+# data/
+
+############################
+# Editors / tools
+############################
+nvim/lazy-lock.json
