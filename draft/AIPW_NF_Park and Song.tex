@@ -1,7 +1,7 @@
 \documentclass[12pt]{article}
 \usepackage{graphicx} 
 \usepackage[margin = 1in]{geometry}
-\usepackage{mathpazo}
+%\usepackage{mathpazo}
 \usepackage{natbib}
 \usepackage{amsmath,amssymb,amsthm}
 \usepackage{hyperref}
@@ -21,9 +21,22 @@
 
 \maketitle
 
+\begin{abstract}
+  
+\end{abstract}
+
+\clearpage
+
+
 \section{Introduction}
 
 In observational studies, political scientists care about an unbiased estimator for average treatment effect (ATE) or average treatment effect on the treated (ATT). One way to generate an unbiased and also semiparametrically efficient estimator is by using augmented inverse propensity weighting(AIPW) estimator, known to be doubly robust. However, there are two caveats here. First, as continuous treatment is common in political science studies, simply dichotomizing treatments to fit into AIPW with a binary treatment framework may lose information on the treatment effect heterogeneity. Second, although researchers can use logit or probit to estimate the propensity score with binary treatment easily, an accurate estimation of the propensity score under continuous treatment is still a challenge. In this paper, we propose to use the normalizing flows (NF), which produce efficient and exact propensity score estimation with continuous treatment.
+
+
+\section{Related Literature}
+
+
+
 
 \section{Augmented Inverse Propensity Weighting}
 
