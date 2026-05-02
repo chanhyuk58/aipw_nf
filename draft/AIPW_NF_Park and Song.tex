@@ -1,13 +1,15 @@
 \documentclass[12pt]{article}
 \usepackage{graphicx} 
 \usepackage[margin = 1in]{geometry}
-%\usepackage{mathpazo}
+
 \usepackage{natbib}
 \usepackage{amsmath,amssymb,amsthm}
 \usepackage{hyperref}
 \usepackage{mathtools}
 \newcommand{\ind}{\perp\!\!\!\!\perp} 
 \DeclareMathOperator{\D}{D}
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\Var}{Var}
 \theoremstyle{definition}
 \newtheorem{assumption}{Assumption}
 \usepackage{setspace}
@@ -36,6 +38,23 @@ In observational studies, political scientists care about an unbiased estimator 
 \section{Related Literature}
 
 
+\subsection{Continuous Treatment and Generalized Propensity Score}
+
+A large literature studies the inference for various treatment effects with binary or categorical treatments, either with randomized experiment or observational studies. In political science, such examples include the Get Out the Vote (GOTV) campaign on voter turnout \citep{gerber2000effects}, the effect of product differentiation in economic markets on firm-level lobbying in political markets \citep{kim2017political}, and the effect of patron-client network on economic development in China \citep{jiang2018making}. However, many empirical settings could also involve continuous treatment, such as the campaign spending, the intensity of a policy implementation, as well as the media exposure. In such settings, causal effects are naturally summarized by an average dose-response function, or the average structural function \citep{colangelo2026double}.
+\begin{align*}
+  m(t) = \E \left[  Y(t) \right], 
+\end{align*}
+rather than by a single average treatment effect. Under consistency, overlap, and conditional ignorability assumption, this curve can be identified as 
+\begin{align*}
+  m(t) = \E \left[ \mu(X, t) \right], \qquad \mu(x, d) = \E \left[ Y \mid X = x, T = t \right].
+\end{align*}
+\citet{hirano2004propensity} provide the foundational propensity-score approach for continuous treatment: the generalized propensity score (GPS). Defined as 
+\begin{align*}
+  g(t \mid x) = f_{T \mid X} (t \mid x),
+\end{align*}
+GPS is the conditional density of the treatment given the covariates. They have shown that the GPS plays an analogous balancing role to the binary propensity score. Although their framework provides a way to estimate does-response functions by adjusting for the GPS, it often relies on parametric modeling of the treatment density.
+
+
 \subsection{Semiparametric Theory and Doubly Robust Estimators}
 
 As mentioned by \citet{kennedy2017nonparametric}, semiparametric theory is not directly available if we only assume mild smoothness conditions on $\theta(d)$ (e.g., differentiability) since without parametric assumptions $\theta(d)$ is not pathwise differentiable, and root $n$ consistent estimators do not exist. By defining a parameter that represents the average outcome under an intervention that randomly assigns treatment based on the density of the continuous treatment, \citet{kennedy2017nonparametric} construct the efficient influence function for this stochastic-intervention parameter, which contains a pseudo-outcome term that attains the double robustness.
@@ -43,7 +62,7 @@ As mentioned by \citet{kennedy2017nonparametric}, semiparametric theory is not d
 \section{Problem Setup}
 
 
-\section{Augmented Inverse Propensity Weighting}
+%\section{Augmented Inverse Propensity Weighting}
 
 %In observational studies, the key assumption is the unconfoundedness. Formally, let $X_i$ denote a vector of pretreatment variables or covariates, $D_i$ denote the treatment, and $Y_{i}(0), Y_{i}(1)$ denote the potential outcomes. We assume that the treatment is independent of the potential outcomes given $X_i$.
 %\begin{assumption}[Unconfoundedness]\label{asm1}
@@ -58,7 +77,7 @@ As mentioned by \citet{kennedy2017nonparametric}, semiparametric theory is not d
 %    \[0 < e(X_i) \equiv \Pr(D_i = d \mid X_i = x) < 1.\]
 %\end{assumption}
 % %\citet{rosenbaum1983central} refer these two assumptions as the strong ignorability.  
-To estimate the causal effect of interest, e.g., ATE or ATT, a variety of methods have been proposed under the unconfoundedness and overlap assumptions, referred as strong ignorability by \citet{rosenbaum1983central}. \citet{imbens2024lalonde} summarise these methods into three groups. In addition to outcome modeling and inverse propensity weighting (IPW), we focus on the AIPW estimator that improves the small sample performance by combining outcome modeling with methods addressing covariate imbalance to eliminate remaining biases or improve precision.
+%To estimate the causal effect of interest, e.g., ATE or ATT, a variety of methods have been proposed under the unconfoundedness and overlap assumptions, referred as strong ignorability by \citet{rosenbaum1983central}. \citet{imbens2024lalonde} summarise these methods into three groups. In addition to outcome modeling and inverse propensity weighting (IPW), we focus on the AIPW estimator that improves the small sample performance by combining outcome modeling with methods addressing covariate imbalance to eliminate remaining biases or improve precision.
 
 %The first one is outcome modeling. Define the conditional expectation of the two potential outcomes given treatment and covariates as
 %\[ \mu_d(x) = \mathbb{E}[Y_i(d) \mid X_i = x], \quad \text{where} \quad d \in \{0, 1\}.  \]
@@ -71,20 +90,20 @@ To estimate the causal effect of interest, e.g., ATE or ATT, a variety of method
 %\[ \hat{\tau}_{\text{IPW}} = \frac{1}{n} \sum_{i = 1}^{n} \left[ \frac{D_iY_i}{\hat{e}(X_i)} - \frac{(1 - D_i)Y_i}{1 - \hat{e}(X_i)} \right], \]
 %where $\hat{e}(X_i)$ is the estimated propensity score. When the propensity is known, then this IPW estimator is unbiased for the ATE, and if propensity scores are estimated consistently, then this estimator is consistent for ATE. However, such a simple IPW estimator is believed to have poor small sample properties when the propensity score gets close to zero or one for some observations \citep{glynn2010introduction}. 
 
-\citet{abadie2011biascorrecteda} provide the example that while the bias of a simple matching estimator might dominate variance in high-dimensional cases, adding regression to account for the remaining imbalance can substantially reduce such biases. The AIPW estimator for ATE with a binary treatment $D$ is as the following:
-\begin{equation}\label{AIPW}
-    \begin{aligned}
-    \tau_{\text{AIPW}} &= \mu_1(X) - \mu_0(X) + \frac{(Y - \mu_1(X)) D}{e(X)} - \frac{(Y - \mu_0(X) (1 - D)}{1 - e(X)}\\
-    &= \frac{DY}{e(X)} - \frac{(1 - D) Y}{1 - e(X)} + \frac{e(X) - D}{e(x) (1 - e(x))} \left[\mu_1(X)(1 - e(X)) + \mu_0(X)e(X)\right].
-    \end{aligned}
-\end{equation}
-We can get the sample analogy as 
-\begin{align*}
-    \hat{\tau}_{\text{AIPW}} = \frac{1}{n} \sum_{i = 1}^{n} \left\{ \frac{D_iY_i}{\hat{e}(X_i)} - \frac{(1 - D_i) Y_i}{1 - \hat{e}(X_i)} + \frac{\hat{e}(X_i) - D_i}{\hat{e}(X_i) (1 - \hat{e}(X_i))} \left[\mu_1(X_i)(1 - \hat{e}(X_i)) + \mu_0(X_i)\hat{e}(X_i)\right] \right\}.
-\end{align*}
-The AIPW estimators can be viewed as combining an outcome model with an adjustment term, which consists of an IPW estimator applied to the residuals from the outcome model, as shown in Equation \ref{AIPW}. \citet{robins1997curse} use the term ``double robustness'' for these mixed methods. If either the propensity score or regression model is correctly specified parametrically, the AIPW estimator that combines weighting and regression is consistent.
-
-To get the unbiased AIPW estimator, researchers need to estimate the propensity score. When the treatment is binary, fitting a logit or probit model can provide the estimated propensity score. However, when the treatment is multinomial or continuous, we need more tools for the estimation. Here our focus is the continuous treatment, which is quite common in the political science setting. Existing studies mostly use kernel density estimation (KDE) technique for the estimation of propensity score. However, KDE largely depends on the chosen kernel and bandwidth. In the paper, we are proposing to use the NF, which are generative models that produce tractable distributions where both sampling and density evaluation can be efficient and exact for propensity score estimation \citep{kobyzev2021normalizing}. 
+%\citet{abadie2011biascorrecteda} provide the example that while the bias of a simple matching estimator might dominate variance in high-dimensional cases, adding regression to account for the remaining imbalance can substantially reduce such biases. The AIPW estimator for ATE with a binary treatment $D$ is as the following:
+%\begin{equation}\label{AIPW}
+%    \begin{aligned}
+%    \tau_{\text{AIPW}} &= \mu_1(X) - \mu_0(X) + \frac{(Y - \mu_1(X)) D}{e(X)} - \frac{(Y - \mu_0(X) (1 - D)}{1 - e(X)}\\
+%    &= \frac{DY}{e(X)} - \frac{(1 - D) Y}{1 - e(X)} + \frac{e(X) - D}{e(x) (1 - e(x))} \left[\mu_1(X)(1 - e(X)) + \mu_0(X)e(X)\right].
+%    \end{aligned}
+%\end{equation}
+%We can get the sample analogy as 
+%\begin{align*}
+%    \hat{\tau}_{\text{AIPW}} = \frac{1}{n} \sum_{i = 1}^{n} \left\{ \frac{D_iY_i}{\hat{e}(X_i)} - \frac{(1 - D_i) Y_i}{1 - \hat{e}(X_i)} + \frac{\hat{e}(X_i) - D_i}{\hat{e}(X_i) (1 - \hat{e}(X_i))} \left[\mu_1(X_i)(1 - \hat{e}(X_i)) + \mu_0(X_i)\hat{e}(X_i)\right] \right\}.
+%\end{align*}
+%The AIPW estimators can be viewed as combining an outcome model with an adjustment term, which consists of an IPW estimator applied to the residuals from the outcome model, as shown in Equation \ref{AIPW}. \citet{robins1997curse} use the term ``double robustness'' for these mixed methods. If either the propensity score or regression model is correctly specified parametrically, the AIPW estimator that combines weighting and regression is consistent.
+%
+%To get the unbiased AIPW estimator, researchers need to estimate the propensity score. When the treatment is binary, fitting a logit or probit model can provide the estimated propensity score. However, when the treatment is multinomial or continuous, we need more tools for the estimation. Here our focus is the continuous treatment, which is quite common in the political science setting. Existing studies mostly use kernel density estimation (KDE) technique for the estimation of propensity score. However, KDE largely depends on the chosen kernel and bandwidth. In the paper, we are proposing to use the NF, which are generative models that produce tractable distributions where both sampling and density evaluation can be efficient and exact for propensity score estimation \citep{kobyzev2021normalizing}. 
 
 
 \section{Normalizing Flows}
@@ -101,7 +120,7 @@ where $\mathbf{g}$ is an invertible function, $\mathbf{f} = \mathbf{g}^{-1}$, an
 
 \begin{figure}[h]
     \centering
-    \includegraphics[width=0.8\linewidth]{../figures/nf_graph.png}
+    \includegraphics[width=0.8\linewidth]{../figures/nf_graph.jpg}
     \caption{Graphical Illustration of Normalizing Flows. from \cite{kobyzev2021normalizing}}
     \label{fig:nf_graph}
 \end{figure}
