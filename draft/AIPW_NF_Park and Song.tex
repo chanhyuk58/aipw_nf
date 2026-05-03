@@ -24,7 +24,7 @@
 \maketitle
 
 \begin{abstract}
-  
+Estimating causal effects with continuous treatments is a central challenge in observational political science research. While the generalized propensity score (GPS) is a foundational tool for identification, traditional estimation methods such as kernel density estimation (KDE) suffer from the curse of dimensionality, while parametric models often fail to capture complex, non-Gaussian treatment distributions. In this paper, we propose a novel approach using conditional normalizing flows (NF) to estimate the GPS. By utilizing a resampled base flow architecture \citep{Stimper2022a}, our method provides exact and flexible density estimation even in high-dimensional covariate spaces and at the boundaries of the treatment support. We integrate this estimator into the doubly robust framework of \citet{Zhang2025a} to estimate both the average dose-response function and its derivative. Simulation results indicate that the NF-based estimator significantly reduces bias and root mean squared error compared to traditional KDE-based approaches, particularly in settings with non-linear confounding. This method provides a robust alternative for researchers seeking to analyze continuous treatment effects without the information loss and bias associated with treatment dichotomization.
 \end{abstract}
 
 \clearpage
@@ -32,22 +32,23 @@
 
 \section{Introduction}
 
-In observational studies, political scientists care about an unbiased estimator for average treatment effect (ATE) or average treatment effect on the treated (ATT). One way to generate an unbiased and also semiparametrically efficient estimator is by using augmented inverse propensity weighting(AIPW) estimator, known to be doubly robust. However, there are two caveats here. First, as continuous treatment is common in political science studies, simply dichotomizing treatments to fit into AIPW with a binary treatment framework may lose information on the treatment effect heterogeneity. Second, although researchers can use logit or probit to estimate the propensity score with binary treatment easily, an accurate estimation of the propensity score under continuous treatment is still a challenge. In this paper, we propose to use the normalizing flows (NF), which produce efficient and exact propensity score estimation with continuous treatment.
+In observational studies, political scientists often seek unbiased estimators for the average treatment effect (ATE) or the average treatment effect on the treated (ATT). A prominent approach to obtaining unbiased and semiparametrically efficient estimates is the augmented inverse propensity weighting (AIPW) estimator, which is characterized by its double robustness. However, the application of this framework faces two significant challenges in contemporary research. First, while continuous treatments are ubiquitous in political science, ranging from campaign expenditures to policy intensity, researchers frequently dichotomize these variables to fit binary treatment frameworks. Such simplification results in a substantial loss of information regarding treatment effect heterogeneity and the shape of the dose-response function. Second, while binary propensity scores are easily estimated via logit or probit models, obtaining an accurate estimation of the generalized propensity score (GPS), which is the propensity score under continuous treatment, remains a difficult task. Traditional methods like kernel density estimation (KDE) often struggle with the curse of dimensionality when the number of pretreatment covariates is large, and parametric assumptions regarding the treatment distribution are often too restrictive for complex empirical data.
 
+In this paper, we propose the use of normalizing flows (NF) for the estimation of the generalized propensity score. Normalizing flows are a class of generative models that utilize a series of invertible transformations to map simple base distributions to complex target densities. Unlike other generative approaches, normalizing flows allow for efficient and exact density evaluation, which is a critical requirement for weighting-based causal estimators \citep{kobyzev2021normalizing}. By leveraging the flexibility of neural networks, normalizing flows can capture non-Gaussian and multimodal treatment distributions while scaling effectively to high-dimensional covariate spaces. We demonstrate the utility of this approach through a simulation study, comparing the performance of NF-based AIPW against traditional density estimation techniques.
 
 \section{Related Literature}
 
-
 \subsection{Continuous Treatment and Generalized Propensity Score}
 
-A large literature studies the inference for various treatment effects with binary or categorical treatments, either with randomized experiment or observational studies. In political science, such examples include the Get Out the Vote (GOTV) campaign on voter turnout \citep{gerber2000effects}, the effect of product differentiation in economic markets on firm-level lobbying in political markets \citep{kim2017political}, and the effect of patron-client network on economic development in China \citep{jiang2018making}. However, many empirical settings could also involve continuous treatment, such as the campaign spending, the intensity of a policy implementation, as well as the media exposure. In such settings, causal effects are naturally summarized by an average dose-response function, or the average structural function \citep{colangelo2026double}.
+A large literature studies the inference for various treatment effects with binary or categorical treatments, either with randomized experiments or observational studies. In political science, such examples include the Get Out the Vote (GOTV) campaign on voter turnout \citep{gerber2000effects}, the effect of product differentiation in economic markets on firm-level lobbying in political markets \citep{kim2017political}, and the effect of patron-client networks on economic development in China \citep{jiang2018making}. However, many empirical settings involve continuous treatment, such as campaign spending, the intensity of policy implementation, or media exposure. In such settings, causal effects are naturally summarized by an average dose-response function (ADRF), or the average structural function \citep{colangelo2026double}.
 \begin{align*}
-  m(t) = \E \left[  Y(t) \right], 
+  m(t) = \E \left[  Y(t) \right].
 \end{align*}
-rather than by a single average treatment effect. Under consistency, overlap, and conditional ignorability assumption, this curve can be identified as 
+Under consistency, overlap, and conditional ignorability assumptions, this curve can be identified as 
 \begin{align*}
-  m(t) = \E \left[ \mu(X, t) \right], \qquad \mu(x, d) = \E \left[ Y \mid X = x, T = t \right].
+  m(t) = \E \left[ \mu(X, t) \right], \qquad \mu(x, t) = \E \left[ Y \mid X = x, T = t \right].
 \end{align*}
+
 
 
 A strand of literature focuses on the treatment density estimation. \citet{hirano2004propensity} provide the foundational propensity-score approach for continuous treatment: the generalized propensity score (GPS). Defined as 
@@ -55,6 +56,12 @@ A strand of literature focuses on the treatment density estimation. \citet{hiran
   g(t \mid x) = f_{T \mid X} (t \mid x),
 \end{align*}
 GPS is the conditional density of the treatment given the covariates. They have shown that the GPS plays an analogous balancing role to the binary propensity score. Although their framework provides a way to estimate does-response functions by adjusting for the GPS, it often relies on parametric modeling of the treatment density. \citet{imai2004causal} extend the idea of GPS through the more general framework of a propensity function for treatment regimes beyond the binary case. Their framework clarifies that causal adjustment with non-binary treatment requires modeling the treatment assignment process as a conditional distribution, not merely as a treatment probability. 
+
+\citet{hirano2004propensity} and \citet{Imai2004a} provide the foundational propensity-score approach for continuous treatment: the generalized propensity score (GPS). Defined as 
+\begin{align*}
+  g(t \mid x) = f_{T \mid X} (t \mid x),
+\end{align*}
+the GPS is the conditional density of the treatment given the covariates. They demonstrate that the GPS plays an analogous balancing role to the binary propensity score. However, traditional estimation of the GPS often relies on parametric models, such as assuming a normal distribution for the treatment given covariates, which may lead to bias if the functional form is misspecified.
 
 Another line of research focuses on the covariate balance. \citet{fong2018covariate} develop the covariate balancing GPS for continuous treatments. Their method estimates weights that reduce association between treatment and covariates, extending the covariate balancing propensity score logic to continuous exposures. This approach highlights the limitation of standard GPS estimation: a well-fitting parametric treatment model does not necessarily imply good covariate balance.
 
@@ -68,8 +75,47 @@ For binary treatment, this logic yields the AIPW estimator with the double robus
 
 As mentioned by \citet{kennedy2017nonparametric}, semiparametric theory is not directly available if we only assume mild smoothness conditions on $\theta(d)$ (e.g., differentiability) since without parametric assumptions $\theta(d)$ is not pathwise differentiable, and root $n$ consistent estimators do not exist. By defining a parameter that represents the average outcome under an intervention that randomly assigns treatment based on the density of the continuous treatment, \citet{kennedy2017nonparametric} construct the efficient influence function for this stochastic-intervention parameter, which contains a pseudo-outcome term that attains the double robustness.
 
+
+As noted by \citet{Kennedy2017a}, semiparametric theory is not directly available if we only assume mild smoothness conditions on $m(t)$ because, without parametric assumptions, the ADRF is not pathwise differentiable and root-$n$ consistent estimators do not exist. By defining a parameter that represents the average outcome under a stochastic intervention, \citet{Kennedy2017a} constructs an efficient influence function that attains double robustness. This framework allows for consistent estimation of the ADRF if either the outcome model or the GPS is correctly estimated. 
+
+When using high-capacity machine learning models to estimate these nuisance parameters, researchers must address the potential for overfitting and regularization bias. \citet{Chernozhukov2018a} provide a general framework for double machine learning (DML), which utilizes cross-fitting to decouple the estimation of nuisance parameters from the calculation of the target causal parameter. This ensures that the flexibility of models like neural networks does not compromise the validity of the resulting causal inference.
+
+\subsection{Normalizing Flows in Density Estimation}
+
+Normalizing flows have emerged as a powerful tool for density estimation due to their ability to model complex, multimodal distributions with exact likelihoods \citet{Kobyzev2021a}. Unlike kernel density estimation, which suffers from the curse of dimensionality, or generative adversarial networks, which do not provide tractable densities, conditional normalizing flows (CNF) can efficiently estimate $f(T|X)$ in high-dimensional settings \citet{Winkler2023a}. Recent advancements, such as resampled base flows, further improve the ability of these models to capture density in regions with limited data or sharp boundaries \citet{Stimper2022a}. This makes them particularly suitable for estimating the GPS, where accurate density evaluation in the tails of the distribution is essential for stable weighting.
+
+
 \section{Problem Setup}
 
+Consider a sample of $n$ units drawn from a population. For each unit $i$, we observe a vector of pretreatment covariates $X_i \in \mathcal{X}$, a continuous treatment $T_i \in \mathcal{T}$, and an outcome $Y_i$. Following the potential outcomes framework, let $Y_i(t)$ denote the potential outcome that would have been observed if unit $i$ had received treatment level $t$. The observed outcome is $Y_i = Y_i(T_i)$. Our primary object of interest is the average dose-response function (ADRF), defined as $m(t) = \E[Y_i(t)]$, which represents the average outcome if everyone in the population were assigned treatment level $t$.
+
+To identify $m(t)$ from observational data, we require the following assumptions, which generalize the strong ignorability conditions used in binary treatment settings \citep{hirano2004propensity}.
+
+\begin{assumption}[Weak Unconfoundedness]
+For all $t \in \mathcal{T}$, $Y_i(t) \ind T_i \mid X_i$.
+\end{assumption}
+
+\begin{assumption}[Positivity]
+For all $t \in \mathcal{T}$ and $x \in \mathcal{X}$, $g(t \mid x) = f_{T \mid X}(t \mid x) > 0$.
+\end{assumption}
+
+Assumption 1 implies that given the observed covariates, the treatment assignment is as good as random, ensuring that there are no unobserved confounders. Assumption 2, also known as the overlap assumption, ensures that for every possible value of the covariates, there is a non-zero probability density of receiving any treatment level $t$. Under these assumptions, the ADRF is identified as:
+\begin{align*}
+    m(t) = \E[ \E[Y \mid T=t, X] ] = \int_{\mathcal{X}} \mu(x, t) dF_X(x),
+\end{align*}
+where $\mu(x, t) = \E[Y \mid X=x, T=t]$ is the outcome regression function.
+
+\citet{hirano2004propensity} show that identification can also be achieved through the generalized propensity score (GPS), $g(t \mid x)$. Specifically, they prove that $T \ind I(T=t) \mid g(t \mid X)$, which allows for the estimation of the ADRF by adjusting for the scalar GPS rather than the full vector of covariates $X$.
+
+Following the framework of \citet{Zhang2025a}, we identify these quantities under the standard assumptions of weak unconfoundedness ($Y_i(t) \ind T_i \mid X_i$) and positivity ($g(t \mid x) > 0$). Under these conditions, the ADRF is identified as $m(t) = \E[\mu(X, t)]$, where $\mu(x, t) = \E[Y \mid X=x, T=t]$. 
+
+To estimate $m(t)$ and $\theta(t)$, we utilize the doubly robust (DR) estimators implemented in the \texttt{npDoseResponse} package \citep{Zhang2025b, Zhang2025a}. The DR estimator for the ADRF at a query point $t$ is constructed using a kernel-weighted average of a pseudo-outcome:
+\begin{align*}
+    \widehat{m}_{\text{DR}}(t) = \frac{1}{n} \sum_{i=1}^n \left[ \widehat{\mu}(X_i, t) + \frac{K_h(T_i - t)}{\widehat{g}(T_i \mid X_i)} (Y_i - \widehat{\mu}(X_i, T_i)) \right],
+\end{align*}
+where $K_h(\cdot) = \frac{1}{h}K(\cdot/h)$ is a kernel function with bandwidth $h$, $\widehat{\mu}$ is the estimated outcome regression, and $\widehat{g}$ is the estimated generalized propensity score (GPS). 
+
+A key contribution of the \citet{Zhang2025a} framework is the extension of this double robustness to the derivative $\theta(t)$. The estimator $\widehat{\theta}_{\text{DR}}(t)$ leverages the derivative of the outcome model and a localized weighting scheme to achieve nonparametric efficiency. This framework is particularly advantageous as it allows for valid inference even when the positivity condition is weak or locally violated, provided that the nuisance parameters are estimated with sufficient accuracy. In this paper, we specifically focus on improving the estimation of the GPS term, $\widehat{g}(t \mid x)$, by replacing traditional kernel-based or parametric density estimators with conditional normalizing flows.
 
 %\section{Augmented Inverse Propensity Weighting}
 
@@ -114,18 +160,10 @@ As mentioned by \citet{kennedy2017nonparametric}, semiparametric theory is not d
 %
 %To get the unbiased AIPW estimator, researchers need to estimate the propensity score. When the treatment is binary, fitting a logit or probit model can provide the estimated propensity score. However, when the treatment is multinomial or continuous, we need more tools for the estimation. Here our focus is the continuous treatment, which is quite common in the political science setting. Existing studies mostly use kernel density estimation (KDE) technique for the estimation of propensity score. However, KDE largely depends on the chosen kernel and bandwidth. In the paper, we are proposing to use the NF, which are generative models that produce tractable distributions where both sampling and density evaluation can be efficient and exact for propensity score estimation \citep{kobyzev2021normalizing}. 
 
-
 \section{Normalizing Flows}
-NF are generative models which produce tractable distributions where both sampling and density evaluation can be efficient and exact, using invertible functions. In other words, it is a technique that maps a random variable with a complex probability density function to the simpler density function.
 
-A typical NF procedure starts with a simple base distribution such as Gaussian and then attempts to transform that function into a more complex distribution by applying a finite number of invertible functions\footnote{The existence of this process is always guaranteed, and discussed in \citet{Chen2000a}.}. The process utilized the \textit{change of variables formula}, which guarantees mapping of one probability density function for a random variable $Y$ with another probability density function of random variable $Z$:
-$$
-\begin{aligned}
-    p_{\mathbf{Y}}(\mathbf{y}) &= p_{\mathbf{Z}}(\mathbf{f}(\mathbf{y}))| \det \D\mathbf{f}(\mathbf{y}) | \\
-           &= p_{\mathbf{Z}}(\mathbf{f}(\mathbf{y}))| \det \D\mathbf{g}(\mathbf{f}(\mathbf{y})) |^{-1},
-\end{aligned}
-$$
-where $\mathbf{g}$ is an invertible function, $\mathbf{f} = \mathbf{g}^{-1}$, and $\D\mathbf{f}(\mathbf{y}) = \frac{\partial \mathbf{f}}{\partial \mathbf{y}}$ is the Jacobian of $\mathbf{f}$. Figure \ref{fig:nf_graph} illustrates this relationship. Since $\mathbf{f}$ moves in the direction of a simple base distribution, it is called \textit{normalizing flow}. 
+Normalizing flows are generative models which produce tractable distributions where both sampling and density evaluation can be efficient and exact, using invertible functions. In other words, it is a technique that maps a random variable with a complex probability density function to a simpler density function.
+
 
 \begin{figure}[h]
     \centering
@@ -134,14 +172,68 @@ where $\mathbf{g}$ is an invertible function, $\mathbf{f} = \mathbf{g}^{-1}$, an
     \label{fig:nf_graph}
 \end{figure}
 
-As a result of this process, we can link the complex distribution (such as a joint distribution of variables we observe) with simple base distribution such as Gaussian. Since this is an invertible process, instead of dealing with the complex distribution itself, we can work with the simple base distribution such as sampling and density estimation, and then easily bring the result to the complex one.
+A typical NF procedure starts with a simple base distribution such as Gaussian and then attempts to transform that function into a more complex distribution by applying a finite number of invertible functions\footnote{The existence of this process is always guaranteed, and discussed in \citet{Chen2000a}.}. The process utilized the \textit{change of variables formula}, which guarantees mapping of one probability density function for a random variable $T$ with another probability density function of random variable $Z$:
+$$
+\begin{aligned}
+    p_{T}(t) &= p_{Z}(f(t))| \det \D f(t) | \\
+           &= p_{Z}(f(t))| \det \D g(f(t)) |^{-1},
+\end{aligned}
+$$
+where $g$ is an invertible function, $f = g^{-1}$, and $\D f(t) = \frac{\partial f}{\partial t}$ is the Jacobian of $f$. Figure \ref{fig:nf_graph} illustrates this relationship. Since $f$ moves in the direction of a simple base distribution, it is called \textit{normalizing flow}. 
 
-NF is a useful tool in density estimation compare to other frequently used density estimation method. Histogram is  a simple exploratory method. However, it relies heavily on the size of bins and thus often performs poorly on complex distributions. Unlike the histogram, KDE technique produces a smooth estimate of the density, using all sample points' locations. The main idea behind KDE has been proposed long ago \citep{Rosenblatt1956a}, but the recent development of computing technology makes it a popular option today. KDE, however, requires researchers to decide which kernel to be used and the size of the bandwidth, and both influence the estimation result. Since NF usually relies on neural network, the computational cost may be high for complex design, it is more capable of dealing with complex density.
+In the context of estimating the generalized propensity score, we require the conditional density $f(T \mid X)$. We therefore utilize conditional normalizing flows (CNF), where the invertible mapping $f$ is conditioned on the covariates $X$ \citep{Winkler2023a}. This allows the neural network to learn a treatment distribution that varies flexibly as a function of the pretreatment variables.
+
+A significant challenge in propensity score estimation is the accurate modeling of density in regions where data is sparse, such as the boundaries of the treatment space. To address this, we utilize resampled base flows \citep{Stimper2022a}. Unlike standard flows that rely on a fixed Gaussian prior, resampled flows learn an initial distribution through an importance-sampling-based mechanism. This architecture is particularly effective for edge-case density estimation, as it allows the model to capture heavy tails and sharp boundaries more accurately than standard normal priors \citep{Stimper2022a}.
+
+NF is a useful tool in density estimation compared to other frequently used density estimation methods. Histograms are simple exploratory methods; however, they rely heavily on the size of bins and thus often perform poorly on complex distributions. Unlike the histogram, the KDE technique produces a smooth estimate of the density using all sample points' locations. The main idea behind KDE was proposed long ago \citep{Rosenblatt1956a}, but the recent development of computing technology makes it a popular option today. KDE, however, requires researchers to decide which kernel to be used and the size of the bandwidth, both of which influence the estimation result. Since NF usually relies on neural networks, it is more capable of dealing with complex, high-dimensional densities where KDE often fails due to the curse of dimensionality.
 
 \section{Using NF for Propensity Score Estimation}
-One straight forward application of density estimation with NF is propensity score estimation. Statistical estimators employing propensity score relies heavily on the accuracy of the propensity score. 
 
-Although there are criticism on using machine learning algorithm in propensity score estimation, it becomes more popular \citep{Goller2020a}. \citet{Lechner2024a} utillized random forest estimation of propensity score. In this paper, we propose to use NF as an alternative for propensity score estimation and leverage the estimated propensity score into the AIPW estimator in observational studies.
+One straightforward application of density estimation with NF is propensity score estimation. Statistical estimators employing propensity scores rely heavily on the accuracy of the propensity score. Although there are criticisms of using machine learning algorithms in propensity score estimation, they have become increasingly popular \citep{Goller2020a}. \citet{Lechner2024a} utilized random forest estimation of the propensity score. In this paper, we propose to use NF as an alternative for propensity score estimation and leverage the estimated propensity score into the AIPW estimator in observational studies.
+
+Our implementation utilizes the \texttt{normflows} and \texttt{Pytorch} libraries in Python. The architecture consists of 32 layers of Masked Affine Autoregressive Flows (MAF), which are known for their efficiency in density estimation tasks \citep{Papamakarios2018a}. To stabilize the training process in our simulation, we employed a bootstrap sampling procedure during the gradient descent iterations. We acknowledge that while this heuristic improves training stability in small samples, formal semiparametric inference requires the decoupling of nuisance parameter estimation from the target estimand. In future work, we intend to replace this procedure with a formal $K$-fold cross-fitting framework to ensure that the flexibility of the normalizing flow does not introduce overfitting bias into the causal estimates \citep{Chernozhukov2018a}.
+
+\section{Simulation Study}
+
+We evaluate the performance of the proposed NF-based estimator using a simulation design with $d = 20$ pretreatment covariates. The covariates $X$ are drawn from a multivariate normal distribution with a Toeplitz covariance structure where $\Sigma_{jk} = 0.5^{|j-k|}$. The treatment $T$ is generated as a non-linear function of the covariates:
+\begin{align*}
+    T_i = \Phi(3 X_i \beta) + \frac{3}{4}\nu_i - \frac{1}{2},
+\end{align*}
+where $\Phi$ is the standard normal CDF, $\beta_j = 1/j^2$, and $\nu_i \sim N(0, 1)$. The outcome $Y$ is determined by:
+\begin{align*}
+    Y_i = 1.2 T_i + T_i^2 + T_i X_{i,1} + 1.2 X_i \beta + \epsilon_i \sqrt{0.5 + \Phi(X_{i,1})},
+\end{align*}
+where $\epsilon_i \sim N(0, 1)$. This setup ensures that both the treatment assignment and the outcome model are non-linear and heteroskedastic, posing a challenge for traditional parametric estimators. We compare three versions of the doubly robust estimator from the \texttt{npDoseResponse} framework: (1) an oracle estimator using the true GPS, (2) an estimator using residual kernel density estimation (KDE), and (3) our proposed estimator using conditional normalizing flows (NF).
+
+\begin{figure}[ht]
+    \centering
+        \centering
+        \includegraphics[width=\textwidth]{../figures/theta.pdf}
+        \caption{$\theta(t)$: Comparison between Residual KDE and Our Proposed Method}
+        \label{fig:a}
+\end{figure}
+
+\begin{figure}[ht]
+        \centering
+        \includegraphics[width=\textwidth]{../figures/m.pdf}
+        \caption{$m(t)$: Comparison between Residual KDE and Our Proposed Method}
+        \label{fig:b}
+\end{figure}
+
+
+The results for the average dose-response function $m(t)$ and its derivative $\theta(t)$ are presented across sample sizes of $n=500$, $n=1000$, and $n=2000$. As shown in the Figure \ref{fig:a} and Figure \ref{fig:b}, the NF-based estimator (green line) consistently tracks the oracle estimator (cyan line) more closely than the KDE-based approach (red line). In the estimation of $m(t)$, the NF estimator exhibits significantly lower bias at the boundaries of the treatment space compared to the KDE approach, which tends to over- or under-estimate the effect as $t$ approaches $-2$ or $2$. This improvement is likely attributable to the resampled base flow architecture, which is specifically designed to handle density estimation at the edges of the support \citep{Stimper2022a}.
+
+For the derivative effect $\theta(t)$, the NF estimator demonstrates superior stability as the sample size increases. While the KDE estimator shows persistent bias and higher RMSE in the $n=500$ and $n=1000$ cases, the NF estimator converges toward the true derivative effect with higher precision. Although some numerical instability is observed in the NF estimates at $n=2000$ for specific query points, the overall RMSE for the NF approach remains competitive with, and often lower than, the KDE approach. These findings suggest that the flexibility of normalizing flows allows for a more accurate capture of the local geometry of the GPS, which is essential for the derivative-based causal inference framework proposed by \citet{Zhang2025a}.
+
+\section{Discussion and Conclusion}
+
+In this paper, we have proposed a novel approach for estimating the generalized propensity score (GPS) using conditional normalizing flows within a doubly robust framework for continuous treatments. Our simulation results demonstrate that normalizing flows, particularly when paired with resampled base distributions, offer a significant improvement over traditional kernel density estimation (KDE) techniques. By leveraging the high-capacity learning of neural networks, this method effectively addresses the curse of dimensionality and the limitations of restrictive parametric assumptions that often hinder causal inference in political science.
+
+The practical implications for empirical research are twofold. First, the flexibility of normalizing flows allows researchers to move away from the common practice of dichotomizing continuous treatments. This seems to be benign practice known to introduce bias and reduce statistical power \citet{Royston2005a}. By accurately modeling the full dose-response function and its derivative, political scientists can gain a more nuanced understanding of how varying intensities of a treatment, such as campaign spending or policy exposure, influence political outcomes. Second, the superior performance of the NF-based estimator at the boundaries of the treatment space provides a more stable foundation for weighting estimators, which are often plagued by extreme weights in regions of low positivity.
+
+Despite these advantages, several avenues for future research remain. While our current implementation utilizes a bootstrap heuristic to stabilize training, the integration of formal $K$-fold cross-fitting is essential to satisfy the requirements of double machine learning and ensure valid asymptotic inference \citep{Chernozhukov2018a}. Furthermore, the computational cost associated with training deep normalizing flows remains higher than that of simpler estimators \citep{Papamakarios2021a}. Future iterations of this work could explore the use of flow matching, which offers a more stable and computationally efficient alternative to standard autoregressive flows by regressing a vector field rather than optimizing the change-of-variables formula directly.
+
+In conclusion, as political science data becomes increasingly high-dimensional and complex, the tools used for causal inference must evolve accordingly. Normalizing flows represent a promising bridge between the flexibility of generative machine learning and the rigor of semiparametric causal theory, providing a robust framework for the analysis of continuous treatment effects in observational studies.
 
 
 
