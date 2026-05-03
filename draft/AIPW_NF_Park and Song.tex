@@ -48,14 +48,23 @@ rather than by a single average treatment effect. Under consistency, overlap, an
 \begin{align*}
   m(t) = \E \left[ \mu(X, t) \right], \qquad \mu(x, d) = \E \left[ Y \mid X = x, T = t \right].
 \end{align*}
-\citet{hirano2004propensity} provide the foundational propensity-score approach for continuous treatment: the generalized propensity score (GPS). Defined as 
+
+
+A strand of literature focuses on the treatment density estimation. \citet{hirano2004propensity} provide the foundational propensity-score approach for continuous treatment: the generalized propensity score (GPS). Defined as 
 \begin{align*}
   g(t \mid x) = f_{T \mid X} (t \mid x),
 \end{align*}
-GPS is the conditional density of the treatment given the covariates. They have shown that the GPS plays an analogous balancing role to the binary propensity score. Although their framework provides a way to estimate does-response functions by adjusting for the GPS, it often relies on parametric modeling of the treatment density.
+GPS is the conditional density of the treatment given the covariates. They have shown that the GPS plays an analogous balancing role to the binary propensity score. Although their framework provides a way to estimate does-response functions by adjusting for the GPS, it often relies on parametric modeling of the treatment density. \citet{imai2004causal} extend the idea of GPS through the more general framework of a propensity function for treatment regimes beyond the binary case. Their framework clarifies that causal adjustment with non-binary treatment requires modeling the treatment assignment process as a conditional distribution, not merely as a treatment probability. 
 
+Another line of research focuses on the covariate balance. \citet{fong2018covariate} develop the covariate balancing GPS for continuous treatments. Their method estimates weights that reduce association between treatment and covariates, extending the covariate balancing propensity score logic to continuous exposures. This approach highlights the limitation of standard GPS estimation: a well-fitting parametric treatment model does not necessarily imply good covariate balance.
+
+Taken together, this literature establishes that the GPS is a central project in the casual inference with continuous treatment. However, as the GPS is a conditional density, its estimation can be statistically challenging and it could be vulnerable to model misspecification. Such limitation motivates a move from propensity-score adjustment alone to semiparametric methods that combine the treatment-density model with an outcome regression model.
 
 \subsection{Semiparametric Theory and Doubly Robust Estimators}
+
+Semiparameric theory provides a general framework for constructing estimators that combine multiple nuisance functions while preserving valid inference for a lower-dimensional target parameter. In causal inference, this framework is especially useful because most causal estimands depend on nuisance components such as the outcome regression, the treatment assignment mechanism, and the covariate distribution. Efficient influence functions play a central role here. They characterize the first-order sensitivity of the target parameter to perturbations of the observed-data distribution and often lead directly to bias-corrected or augmented estimators.
+
+For binary treatment, this logic yields the AIPW estimator with the double robustness property, which means. 
 
 As mentioned by \citet{kennedy2017nonparametric}, semiparametric theory is not directly available if we only assume mild smoothness conditions on $\theta(d)$ (e.g., differentiability) since without parametric assumptions $\theta(d)$ is not pathwise differentiable, and root $n$ consistent estimators do not exist. By defining a parameter that represents the average outcome under an intervention that randomly assigns treatment based on the density of the continuous treatment, \citet{kennedy2017nonparametric} construct the efficient influence function for this stochastic-intervention parameter, which contains a pseudo-outcome term that attains the double robustness.
 
