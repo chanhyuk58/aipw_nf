@@ -193,9 +193,10 @@
   doi = {10.1214/17-AOAS1101}
 }
 
-@misc{Winkler2023a,
+@unpublished{Winkler2023a,
 	author = {Winkler, Christina and Worrall, Daniel and Hoogeboom, Emiel and Welling, Max},
 	title = {Learning Likelihoods with Conditional Normalizing Flows},
+	note = {arXiv preprint arXiv:1912.00042},
 	year = 2023}
 
 @inproceedings{Stimper2022a,
@@ -220,11 +221,14 @@
 	volume = 43,
 	year = 2021}
 
-@unpublished{Chernozhukov2018a,
-	author = {Chernozhukov, Victor and Demirer, Mert and Duflo, Esther and Fern{\~A}{!'}ndez-Val, Iv{\~A}{!'}n},
-	month = jun,
+@article{Chernozhukov2018a,
+	author = {Chernozhukov, Victor and Demirer, Mert and Duflo, Esther and Fern{\'a}ndez-Val, Iv{\'a}n},
+	journal = {Econometrica},
+	volume = {92},
+	number = {1},
+	pages = {1--31},
 	title = {Generic Machine Learning Inference on Heterogeneous Treatment Effects in Randomized Experiments, with an Application to Immunization in India},
-	year = 2018}
+	year = 2024}
 
 @article{Kennedy2017a,
 	author = {Kennedy, Edward H. and Ma, Zongming and McHugh, Matthew D. and Small, Dylan S.},
@@ -256,30 +260,43 @@
 	year = 1974}
 
   
-@misc{Zhang2025a,
+@unpublished{Zhang2025a,
 	author = {Zhang, Yikun and Chen, Yen-Chi},
 	title = {Doubly Robust Inference on Causal Derivative Effects for Continuous Treatments},
+	note = {arXiv preprint arXiv:2405.09003},
 	year = {2025}}
 
-@misc{Zhang2025b,
+@unpublished{Zhang2025b,
 	author = {Zhang, Yikun and Chen, Yen-Chi and Giessing, Alexander},
 	title = {Nonparametric Inference on Dose-Response Curves Without the Positivity Condition},
+	note = {arXiv preprint arXiv:2405.09003},
 	year = {2025}}
 
-  
-@misc{Papamakarios2018a,
-	author = {Papamakarios, George and Pavlakou, Theo and Murray, Iain},
-	title = {Masked Autoregressive Flow for Density Estimation},
-	year = 2018}
+@inproceedings{papamakarios2018a,
+ author = {Papamakarios, George and Pavlakou, Theo and Murray, Iain},
+ booktitle = {Advances in Neural Information Processing Systems},
+ editor = {I. Guyon and U. Von Luxburg and S. Bengio and H. Wallach and R. Fergus and S. Vishwanathan and R. Garnett},
+ pages = {},
+ publisher = {Curran Associates, Inc.},
+ title = {Masked Autoregressive Flow for Density Estimation},
+ url = {https://proceedings.neurips.cc/paper_files/paper/2017/file/6c1da886822c67822bcf3679d04369fa-Paper.pdf},
+ volume = {30},
+ year = {2017}
+}
 
-@misc{Zhu2026a,
+@unpublished{Zhu2026a,
 	author = {Zhu, Haiyan and Zhou, Yingchun},
 	title = {Estimating causal effects of continuous-time dynamic treatments with unmeasured confounders},
+	note = {Working paper},
 	year = {2026}}
 
 
-@misc{Papamakarios2021a,
+@article{Papamakarios2021a,
 	author = {Papamakarios, George and Nalisnick, Eric and Rezende, Danilo Jimenez and Mohamed, Shakir and Lakshminarayanan, Balaji},
+	journal = {Journal of Machine Learning Research},
+	volume = {22},
+	number = {57},
+	pages = {1--64},
 	title = {Normalizing Flows for Probabilistic Modeling and Inference},
 	year = 2021}
 
@@ -292,4 +309,28 @@
 	title = {Dichotomizing continuous predictors in multiple regression: a bad idea},
 	volume = {25},
 	year = {2005}}
+
+@article{zhang2026personalized,
+  title = {Personalized {{Policy Learning}} through {{Discrete Experimentation}}: {{Theory}} and {{Empirical Evidence}}},
+  shorttitle = {Personalized {{Policy Learning}} through {{Discrete Experimentation}}},
+  author = {Zhang, Zhiqi and Zeng, Zhiyu and Zhan, Ruohan and Zhang, Dennis},
+  year = 2026,
+  journal = {arXiv:2602.05099},
+  eprint = {2602.05099},
+  primaryclass = {econ},
+  publisher = {arXiv},
+  doi = {10.48550/arXiv.2602.05099},
+  archiveprefix = {arXiv}
+}
+@article{chernozhukov2018double,
+  title = {Double/Debiased Machine Learning for Treatment and Structural Parameters},
+  author = {Chernozhukov, Victor and Chetverikov, Denis and Demirer, Mert and Duflo, Esther and Hansen, Christian and Newey, Whitney and Robins, James},
+  year = 2018,
+  journal = {The Econometrics Journal},
+  volume = {21},
+  number = {1},
+  pages = {C1-C68},
+  doi = {10.1111/ectj.12097},
+  annotation = {TLDR: This work revisits the classic semiparametric problem of inference on a low dimensional parameter \texttheta\_0 in the presence of high-dimensional nuisance parameters {$\eta\_$}0 and proves that DML delivers point estimators that concentrate in a N\textasciicircum (-1/2)-neighborhood of the true parameter values and are approximately unbiased and normally distributed, which allows construction of valid confidence statements.}
+}
 
